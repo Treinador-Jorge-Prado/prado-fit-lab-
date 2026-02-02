@@ -54,8 +54,11 @@ const App: React.FC = () => {
       try {
         // 1. Carregar Base de Dados (Prioridade LocalStorage > Mocks)
         const storedStudents = localStorage.getItem('students');
-        const loadedStudents: User[] = storedStudents ? JSON.parse(storedStudents) : MOCK_STUDENTS;
+        let loadedStudents: User[] = storedStudents ? JSON.parse(storedStudents) : MOCK_STUDENTS;
         
+        // Garantir que mocks tenham senhas se faltar
+        loadedStudents = loadedStudents.map(s => ({...s, password: s.password || '1234'}));
+
         const storedExercises = localStorage.getItem('lab_exercises');
         const loadedExercises: Exercise[] = storedExercises ? JSON.parse(storedExercises) : INITIAL_EXERCISES;
 
@@ -75,9 +78,11 @@ const App: React.FC = () => {
         
         if (storedUser) {
           const parsedUser = JSON.parse(storedUser);
-          setCurrentUser(parsedUser);
+          // Refetch user to get latest data (like password)
+          const refreshedUser = loadedStudents.find(s => s.id === parsedUser.id) || (parsedUser.role === UserRole.PERSONAL ? MOCK_PERSONAL : parsedUser);
+          setCurrentUser(refreshedUser);
           if (storedView) setCurrentView(storedView as any);
-          else setCurrentView(parsedUser.role === UserRole.PERSONAL ? 'DASHBOARD' : 'STUDENT_VIEW');
+          else setCurrentView(refreshedUser.role === UserRole.PERSONAL ? 'DASHBOARD' : 'STUDENT_VIEW');
         }
 
         // 3. Validação de Magic Token (Acesso sem senha)
@@ -148,8 +153,12 @@ const App: React.FC = () => {
 
       const student = students.find(s => s.email.toLowerCase().trim() === cleanEmail);
       if (student) {
-        setCurrentUser(student);
-        setCurrentView('STUDENT_VIEW');
+        if (student.password === cleanPass) {
+          setCurrentUser(student);
+          setCurrentView('STUDENT_VIEW');
+        } else {
+          alert("Senha incorreta. Tente novamente ou peça suporte ao Jorge.");
+        }
       } else {
         alert("E-mail não cadastrado no Team Prado. Verifique com o Treinador Jorge.");
       }
@@ -401,6 +410,7 @@ const App: React.FC = () => {
             onCheckIn={addCheckIn}
             onRegisterLoad={handleRegisterLoad}
             loadHistory={loadHistory}
+            onUpdateProfile={handleUpdateMember}
           />
         )}
 

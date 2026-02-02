@@ -10,9 +10,90 @@ interface StudentViewProps {
   onCheckIn: (checkin: CheckIn) => void;
   onRegisterLoad: (entry: LoadEntry) => void;
   loadHistory: LoadEntry[];
+  onUpdateProfile?: (updated: User) => void;
 }
 
-const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, onRegisterLoad, loadHistory }) => {
+const PasswordModal: React.FC<{ student: User; onClose: () => void; onSave: (updated: User) => void }> = ({ student, onClose, onSave }) => {
+  const [currentPass, setCurrentPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (currentPass !== student.password) {
+      setError('Senha atual incorreta.');
+      return;
+    }
+
+    if (newPass.length < 4) {
+      setError('A nova senha deve ter no mínimo 4 caracteres.');
+      return;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+    onSave({ ...student, password: newPass });
+    setSuccess(true);
+    setTimeout(() => onClose(), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-xl animate-in fade-in">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative w-full max-w-sm bg-slate-900 border border-slate-800 rounded-[32px] shadow-2xl p-8 animate-in zoom-in-95">
+        {!success ? (
+          <form onSubmit={handleSave} className="space-y-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-orange-500/10 rounded-xl flex items-center justify-center text-orange-500">
+                <Icons.User className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-black text-white uppercase italic tracking-tighter leading-none">Minha Conta</h3>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Senha Atual</label>
+                <input 
+                  type="password" required
+                  value={currentPass}
+                  onChange={e => setCurrentPass(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:border-orange-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nova Senha</label>
+                <input 
+                  type="password" required
+                  value={newPass}
+                  onChange={e => setNewPass(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:border-orange-500 outline-none"
+                />
+              </div>
+
+              {error && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest px-1">{error}</p>}
+            </div>
+
+            <button className="w-full py-5 bg-orange-500 text-slate-950 font-black rounded-2xl uppercase tracking-widest text-xs shadow-xl shadow-orange-500/20 active:scale-95 transition-all">Salvar Alterações</button>
+            <button type="button" onClick={onClose} className="w-full text-[10px] font-black text-slate-500 uppercase tracking-widest">Cancelar</button>
+          </form>
+        ) : (
+          <div className="text-center space-y-4 py-4 animate-in zoom-in">
+            <div className="w-16 h-16 bg-emerald-500/10 border-2 border-emerald-500 text-emerald-400 rounded-full flex items-center justify-center mx-auto">
+              <Icons.Check className="w-8 h-8" />
+            </div>
+            <p className="text-white font-black uppercase tracking-tighter text-lg">Senha atualizada!</p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">O Lab Prado sincronizou seus dados.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, onRegisterLoad, loadHistory, onUpdateProfile }) => {
   const [activeLetra, setActiveLetra] = useState<string | null>(workout?.divisoes?.[0]?.letra || null);
   const [checkedExercises, setCheckedExercises] = useState<Record<string, boolean>>({});
   const [exerciseLoads, setExerciseLoads] = useState<Record<string, string>>({});
@@ -21,6 +102,7 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
   const [finalDuration, setFinalDuration] = useState<number>(0);
   const [previewEx, setPreviewEx] = useState<Exercise | null>(null);
   const [prCelebration, setPrCelebration] = useState<{ exercise: string; weight: number } | null>(null);
+  const [showAccountModal, setShowAccountModal] = useState(false);
 
   // Estados do Cronômetro
   const [isWorkoutStarted, setIsWorkoutStarted] = useState(false);
@@ -180,6 +262,14 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
         />
       )}
 
+      {showAccountModal && (
+        <PasswordModal 
+          student={student} 
+          onClose={() => setShowAccountModal(false)} 
+          onSave={onUpdateProfile || (() => {})} 
+        />
+      )}
+
       {/* CRONÔMETRO FLUTUANTE */}
       {isWorkoutStarted && (
         <div className="fixed top-20 left-0 right-0 z-50 px-6 animate-in slide-in-from-top-4">
@@ -223,11 +313,19 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
       )}
 
       <div className={`space-y-4 ${isWorkoutStarted ? 'pt-24' : ''}`}>
-        <div className="space-y-1">
-          <h1 className="text-3xl font-black text-white uppercase tracking-tighter">Meu Protocolo</h1>
-          <p className="text-orange-400 font-black uppercase tracking-widest text-[10px]">
-             {workout?.nome_da_planilha || 'Nenhum protocolo ativo'}
-          </p>
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black text-white uppercase tracking-tighter">Meu Protocolo</h1>
+            <p className="text-orange-400 font-black uppercase tracking-widest text-[10px]">
+               {workout?.nome_da_planilha || 'Nenhum protocolo ativo'}
+            </p>
+          </div>
+          <button 
+            onClick={() => setShowAccountModal(true)}
+            className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-orange-500 hover:border-orange-500 transition-all"
+          >
+            <Icons.User className="w-6 h-6" />
+          </button>
         </div>
 
         {!isWorkoutStarted && workout && (
