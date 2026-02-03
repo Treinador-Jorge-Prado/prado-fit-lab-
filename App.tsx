@@ -35,7 +35,9 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'LOGIN' | 'DASHBOARD' | 'STUDENT_VIEW' | 'WORKOUT_EDITOR' | 'PROFILE_VIEW' | 'VIDEO_LIBRARY' | 'VIDEO_MANAGER' | 'EXERCISE_MANAGER'>('LOGIN');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
-  // Função para carregar dados do Supabase
+  // LOGO REAL DO PRADO FIT LAB
+  const LOGO_URL = "COLE_SEU_LINK_AQUI";
+
   const loadSupabaseData = useCallback(async () => {
     try {
       const [remoteStudents, remoteVideos] = await Promise.all([
@@ -46,7 +48,6 @@ const App: React.FC = () => {
       setStudents(remoteStudents);
       setVideos(remoteVideos);
       
-      // Extrai os treinos dos alunos para o estado de workouts
       const remoteWorkouts = remoteStudents
         .filter(s => (s as any).workout_data)
         .map(s => (s as any).workout_data as PlanilhaTreino);
@@ -54,8 +55,7 @@ const App: React.FC = () => {
 
       return { students: remoteStudents, videos: remoteVideos };
     } catch (error) {
-      alert("Erro ao sincronizar com o servidor Prado Fit Lab. Verifique sua conexão.");
-      console.error(error);
+      console.error("FALHA CRÍTICA AO SINCRONIZAR LAB:", error);
       return null;
     }
   }, []);
@@ -63,11 +63,8 @@ const App: React.FC = () => {
   useEffect(() => {
     const initData = async () => {
       setIsLoading(true);
-      
-      // Tenta carregar do Supabase primeiro
       const data = await loadSupabaseData();
       
-      // Fallback para exercícios (ainda no localStorage para este MVP ou Mock)
       const storedExercises = localStorage.getItem('lab_exercises');
       setExercises(storedExercises ? JSON.parse(storedExercises) : INITIAL_EXERCISES);
 
@@ -102,9 +99,9 @@ const App: React.FC = () => {
     e.preventDefault();
     setIsLoggingIn(true);
     
-    // Refresh data from Supabase before login
     const data = await loadSupabaseData();
     if (!data) {
+      alert("Erro ao conectar ao Prado Fit Lab. Verifique sua conexão.");
       setIsLoggingIn(false);
       return;
     }
@@ -129,7 +126,7 @@ const App: React.FC = () => {
           alert("Senha incorreta. Tente novamente ou peça suporte ao Jorge.");
         }
       } else {
-        alert("E-mail não cadastrado no Team Prado. Verifique com o Treinador Jorge.");
+        alert("Membro não encontrado no banco de dados Prado Fit Lab.");
       }
     }
     setIsLoggingIn(false);
@@ -146,9 +143,11 @@ const App: React.FC = () => {
   const handleAddMember = async (newMember: User) => {
     try {
       await saveAluno(newMember);
-      await loadSupabaseData(); // Sync
+      await loadSupabaseData();
+      // O formulário no AdicionarMembro.tsx já lida com o estado de sucesso
     } catch (e) {
-      alert("Erro ao salvar membro no servidor.");
+      console.error("FALHA AO SALVAR ALUNO:", e);
+      alert("Erro ao salvar no banco. Verifique o console para diagnóstico.");
     }
   };
 
@@ -158,7 +157,7 @@ const App: React.FC = () => {
       await loadSupabaseData();
       if (currentUser?.id === updatedMember.id) setCurrentUser(updatedMember);
     } catch (e) {
-      alert("Erro ao atualizar dados.");
+      console.error("FALHA AO ATUALIZAR ALUNO:", e);
     }
   };
 
@@ -167,7 +166,7 @@ const App: React.FC = () => {
       await saveConteudo(newVideo);
       await loadSupabaseData();
     } catch (e) {
-      alert("Erro ao publicar conteúdo.");
+      console.error("FALHA AO ADICIONAR CONTEÚDO:", e);
     }
   };
 
@@ -176,7 +175,7 @@ const App: React.FC = () => {
       await saveConteudo(updatedVideo);
       await loadSupabaseData();
     } catch (e) {
-      alert("Erro ao atualizar conteúdo.");
+      console.error("FALHA AO ATUALIZAR CONTEÚDO:", e);
     }
   };
 
@@ -185,7 +184,7 @@ const App: React.FC = () => {
       await removeConteudo(id);
       await loadSupabaseData();
     } catch (e) {
-      alert("Erro ao remover conteúdo.");
+      console.error("FALHA AO REMOVER CONTEÚDO:", e);
     }
   };
 
@@ -195,14 +194,13 @@ const App: React.FC = () => {
       await loadSupabaseData();
       setCurrentView('DASHBOARD');
     } catch (e) {
-      alert("Erro ao salvar protocolo de treino.");
+      console.error("FALHA AO SALVAR WORKOUT:", e);
     }
   };
 
   const addCheckIn = (checkin: CheckIn) => {
     const updated = [...checkins, checkin];
     setCheckins(updated);
-    // TODO: Migrar checkins para Supabase também se necessário para analytics do Jorge
     localStorage.setItem('checkins', JSON.stringify(updated));
   };
 
@@ -240,32 +238,45 @@ const App: React.FC = () => {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-950 relative overflow-hidden">
         <div className="w-full max-sm:px-4 max-w-sm space-y-12 text-center relative z-10">
           
-          <div className="space-y-6">
-            <div className="relative mx-auto w-32 h-32 flex items-center justify-center">
-              <div className="absolute inset-0 bg-orange-500/20 blur-[45px] rounded-full scale-150 animate-pulse" />
-              <div className="relative w-24 h-24 bg-orange-500/10 flex items-center justify-center rounded-[32px] border border-orange-500/20 shadow-[0_0_50px_rgba(249,115,22,0.15)]">
-                 <Icons.Bodybuilder className="w-16 h-16 text-orange-500" />
-              </div>
+          {/* CABEÇALHO DESIGN DE ELITE CORRIGIDO */}
+          <div className="flex flex-col items-center space-y-6">
+            <div className="relative">
+              <img 
+                src={LOGO_URL} 
+                alt="Logo Prado Fit Lab" 
+                className="h-[120px] w-auto object-contain drop-shadow-[0_0_15px_rgba(249,115,22,0.6)]"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             </div>
             
-            <div className="space-y-2">
-              <h1 className="text-4xl font-black tracking-tighter text-white uppercase italic leading-none">
-                PRADO <span className="text-orange-400">FIT LAB</span>
+            <div className="space-y-1">
+              <h1 className="text-4xl font-black italic tracking-tighter text-white uppercase leading-none">
+                PRADO FIT LAB
               </h1>
-              <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.4em]">TEAM JORGE PRADO</p>
+              <p className="text-xs font-bold text-orange-500 uppercase tracking-[0.3em]">
+                TEAM JORGE PRADO
+              </p>
             </div>
           </div>
           
           {!loginRole ? (
             <div className="space-y-4 pt-4">
-              <button onClick={() => setLoginRole(UserRole.PERSONAL)} className="w-full flex items-center justify-between p-6 rounded-[32px] bg-slate-900 border border-slate-800 hover:border-orange-500/50 transition-all group shadow-xl text-left">
+              <button 
+                onClick={() => setLoginRole(UserRole.PERSONAL)} 
+                className="w-full flex items-center justify-between p-6 rounded-[32px] bg-slate-900 border border-slate-800 hover:border-orange-500/50 transition-all group shadow-xl text-left"
+              >
                 <div>
                   <p className="font-black text-white text-lg uppercase tracking-tight">Gestão Jorge</p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Treinador Admin</p>
                 </div>
                 <div className="p-3 rounded-2xl bg-orange-500/10 text-orange-400"><Icons.User /></div>
               </button>
-              <button onClick={() => setLoginRole(UserRole.STUDENT)} className="w-full flex items-center justify-between p-6 rounded-[32px] bg-slate-900 border border-slate-800 hover:border-orange-500/50 transition-all group shadow-xl text-left">
+              <button 
+                onClick={() => setLoginRole(UserRole.STUDENT)} 
+                className="w-full flex items-center justify-between p-6 rounded-[32px] bg-slate-900 border border-slate-800 hover:border-orange-500/50 transition-all group shadow-xl text-left"
+              >
                 <div>
                   <p className="font-black text-white text-lg uppercase tracking-tight">Membro Team Prado</p>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Acessar Treino</p>
@@ -277,11 +288,27 @@ const App: React.FC = () => {
             <form onSubmit={handleLoginSubmit} className="space-y-6 text-left animate-in slide-in-from-bottom-4 duration-500">
               <button type="button" onClick={() => setLoginRole(null)} className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1 hover:text-white mb-4 transition-colors">← Voltar</button>
               <div className="space-y-4">
-                <input type="text" required value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="Seu E-mail" className="w-full bg-slate-950 border-2 border-slate-800 rounded-2xl px-6 py-4 text-white font-bold placeholder:text-slate-600 focus:outline-none focus:border-orange-500 transition-all" />
-                <input type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-900 border-2 border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:outline-none focus:border-orange-500 transition-all" />
+                <input 
+                  type="text" required 
+                  value={identifier} 
+                  onChange={(e) => setIdentifier(e.target.value)} 
+                  placeholder="Seu E-mail" 
+                  className="w-full bg-slate-950 border-2 border-slate-800 rounded-2xl px-6 py-4 text-white font-bold placeholder:text-slate-600 focus:outline-none focus:border-orange-500 transition-all" 
+                />
+                <input 
+                  type="password" required
+                  placeholder="Senha" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  className="w-full bg-slate-900 border-2 border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:outline-none focus:border-orange-500 transition-all" 
+                />
               </div>
-              <button type="submit" disabled={isLoggingIn} className="w-full py-5 bg-orange-500 text-slate-950 font-black rounded-2xl shadow-2xl uppercase tracking-widest text-sm active:scale-95 transition-all">
-                {isLoggingIn ? 'Autenticando...' : 'Entrar no Lab'}
+              <button 
+                type="submit" 
+                disabled={isLoggingIn} 
+                className="w-full py-5 bg-orange-500 text-slate-950 font-black rounded-2xl shadow-2xl uppercase tracking-widest text-sm active:scale-95 transition-all"
+              >
+                {isLoggingIn ? 'Sincronizando...' : 'Entrar no Lab'}
               </button>
             </form>
           )}
@@ -293,13 +320,16 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen pb-20 md:pb-0 bg-slate-950">
       <header className="sticky top-0 z-[60] flex items-center justify-between px-8 py-5 bg-slate-950/90 backdrop-blur-xl border-b border-slate-900">
-        <div className="flex items-center gap-3">
-          <div className="p-1.5 bg-orange-500/10 text-orange-400 rounded-lg">
-             <Icons.Bodybuilder className="w-5 h-5" />
-          </div>
+        <div className="flex items-center gap-4">
+          <img 
+            src={LOGO_URL} 
+            className="h-8 w-auto object-contain drop-shadow-[0_0_8px_rgba(249,115,22,0.3)]" 
+            alt="Logo" 
+            onError={(e) => e.currentTarget.style.display = 'none'}
+          />
           <div className="flex flex-col">
-            <span className="font-black text-lg tracking-tighter text-white uppercase italic leading-none">PRADO <span className="text-orange-400">LAB</span></span>
-            <span className="text-[7px] font-black text-slate-500 uppercase tracking-[0.3em] leading-none mt-0.5">TEAM JORGE PRADO</span>
+            <span className="font-black text-lg tracking-tighter text-white uppercase italic leading-none">PRADO FIT LAB</span>
+            <span className="text-[8px] font-bold text-orange-500 uppercase tracking-[0.2em] leading-none mt-0.5">TEAM JORGE PRADO</span>
           </div>
         </div>
         <button onClick={logout} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-all">Sair</button>
