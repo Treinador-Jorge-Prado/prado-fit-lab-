@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, PlanilhaTreino, CheckIn, Exercise, LoadEntry, DivisaoTreino } from '../types';
+import { User, PlanilhaTreino, CheckIn, Exercise, LoadEntry, DivisaoTreino, SelecedExercise } from '../types';
 import { Icons } from '../constants';
-import VideoModal from './VideoModal';
 
 interface StudentViewProps {
   student: User;
@@ -100,17 +99,14 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
   const [isFinished, setIsFinished] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [finalDuration, setFinalDuration] = useState<number>(0);
-  const [previewEx, setPreviewEx] = useState<Exercise | null>(null);
   const [prCelebration, setPrCelebration] = useState<{ exercise: string; weight: number } | null>(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
 
-  // Estados do Cronômetro
   const [isWorkoutStarted, setIsWorkoutStarted] = useState(false);
   const [stopwatchSeconds, setStopwatchSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const stopwatchInterval = useRef<number | null>(null);
 
-  // Estados do Timer de Descanso
   const [restSeconds, setRestSeconds] = useState<number | null>(null);
   const restInterval = useRef<number | null>(null);
 
@@ -138,7 +134,6 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
     return () => { if (restInterval.current) clearInterval(restInterval.current); };
   }, [restSeconds]);
 
-  // Sincronizar activeLetra se o workout mudar (ex: carregamento após F5)
   useEffect(() => {
     if (!activeLetra && workout?.divisoes?.[0]) {
       setActiveLetra(workout.divisoes[0].letra);
@@ -175,7 +170,6 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
     const currentDuration = stopwatchSeconds;
     setFinalDuration(currentDuration);
 
-    // Feedback visual de carregamento para salvar
     await new Promise(resolve => setTimeout(resolve, 800));
 
     activeDivisao.exercicios?.forEach((ex, idx) => {
@@ -254,14 +248,6 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
 
   return (
     <div className="p-6 space-y-8 max-w-2xl mx-auto animate-in fade-in duration-500 pb-32">
-      {previewEx && (
-        <VideoModal 
-          videoUrl={previewEx.video_url || ''} 
-          title={previewEx.nome || ''} 
-          onClose={() => setPreviewEx(null)} 
-        />
-      )}
-
       {showAccountModal && (
         <PasswordModal 
           student={student} 
@@ -270,7 +256,6 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
         />
       )}
 
-      {/* CRONÔMETRO FLUTUANTE */}
       {isWorkoutStarted && (
         <div className="fixed top-20 left-0 right-0 z-50 px-6 animate-in slide-in-from-top-4">
            <div className="max-w-2xl mx-auto bg-slate-900/90 backdrop-blur-xl border-2 border-orange-500/30 rounded-[32px] p-4 flex items-center justify-between shadow-2xl">
@@ -315,7 +300,7 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
       <div className={`space-y-4 ${isWorkoutStarted ? 'pt-24' : ''}`}>
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-3xl font-black text-white uppercase tracking-tighter">Meu Protocolo</h1>
+            <h1 className="text-3xl font-black text-white uppercase tracking-tighter italic">Meu Protocolo</h1>
             <p className="text-orange-400 font-black uppercase tracking-widest text-[10px]">
                {workout?.nome_da_planilha || 'Nenhum protocolo ativo'}
             </p>
@@ -338,7 +323,6 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
            </button>
         )}
 
-        {/* SELETOR DE DIVISÃO (TABS) */}
         {workout && workout.divisoes?.length > 0 && !isWorkoutStarted && (
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2">
             {workout.divisoes.map(d => (
@@ -400,17 +384,34 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
                           {lastLoad && <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 text-[9px] font-black uppercase tracking-tighter">PR: {lastLoad}kg</span>}
                         </div>
                         <h3 className="text-lg font-black text-white uppercase tracking-tight leading-tight">{ex.nome}</h3>
+                        {/* Instruções Técnicas Exibidas Diretamente */}
+                        {ex.instrucoes && (
+                          <p className="mt-2 text-xs font-medium text-slate-400 italic leading-relaxed">
+                            "{ex.instrucoes}"
+                          </p>
+                        )}
                       </div>
-                      <button 
-                        onClick={() => toggleCheck(key)}
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all transform active:scale-90 flex-shrink-0 ${
-                          checkedExercises[key]
-                            ? 'bg-orange-500 text-slate-950'
-                            : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
-                        }`}
-                      >
-                        <Icons.Check className="w-6 h-6" />
-                      </button>
+                      <div className="flex gap-2">
+                        {ex.video_url && (
+                          <button 
+                            onClick={() => window.open(ex.video_url, '_blank')}
+                            className="w-12 h-12 rounded-2xl bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-slate-950 flex items-center justify-center transition-all flex-shrink-0"
+                            title="Ver Vídeo Tutorial"
+                          >
+                            <Icons.Play className="w-6 h-6 fill-current" />
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => toggleCheck(key)}
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all transform active:scale-90 flex-shrink-0 ${
+                            checkedExercises[key]
+                              ? 'bg-orange-500 text-slate-950'
+                              : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
+                          }`}
+                        >
+                          <Icons.Check className="w-6 h-6" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -438,17 +439,11 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
                       </div>
                     </div>
 
-                    <div className="flex gap-2">
-                      {ex.video_url && (
-                        <button 
-                          onClick={() => setPreviewEx(ex as any)}
-                          className="flex items-center gap-2 text-[10px] text-white font-black bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl border border-white/10 transition-all uppercase tracking-widest"
-                        >
-                          <Icons.Play className="w-3 h-3" />
-                          Biomecânica
-                        </button>
-                      )}
-                    </div>
+                    {ex.observacoes_especificas && (
+                       <div className="px-4 py-2 bg-slate-800/50 rounded-xl">
+                          <p className="text-[9px] font-bold text-slate-400 italic">Obs Jorge: {ex.observacoes_especificas}</p>
+                       </div>
+                    )}
                   </div>
                 );
               })
@@ -474,7 +469,7 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
                <Icons.Dumbbell className="w-10 h-10" />
             </div>
             <div className="space-y-2">
-              <p className="text-white font-black uppercase tracking-widest text-sm">Protocolo em Preparação</p>
+              <p className="text-white font-black uppercase tracking-widest text-sm italic">Protocolo em Preparação</p>
               <p className="text-slate-500 italic text-xs">O Treinador Prado está ajustando suas divisões de elite.</p>
             </div>
           </div>

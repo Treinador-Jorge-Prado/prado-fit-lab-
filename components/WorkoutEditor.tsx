@@ -3,7 +3,6 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, PlanilhaTreino, SelecedExercise, Exercise, LoadEntry, DivisaoTreino } from '../types';
 import { Icons } from '../constants';
 import { salvarTreino } from '../persistenceService';
-import VideoModal from './VideoModal';
 
 interface WorkoutEditorProps {
   student: User;
@@ -17,7 +16,6 @@ interface WorkoutEditorProps {
 const HistoryModal: React.FC<{ studentId: string; exerciseId: string; exerciseName: string; onClose: () => void; loadHistory: LoadEntry[] }> = ({ studentId, exerciseId, exerciseName, onClose, loadHistory }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Update chart whenever data changes
   useEffect(() => {
     if (canvasRef.current) {
       const entries = (loadHistory || [])
@@ -30,7 +28,6 @@ const HistoryModal: React.FC<{ studentId: string; exerciseId: string; exerciseNa
         new window.Chart(ctx, {
           type: 'line',
           data: {
-            // Fix possible 'unknown' type error by adding explicit type for entries map
             labels: entries.map((e: LoadEntry) => new Date(e.timestamp).toLocaleDateString('pt-BR')),
             datasets: [{
               label: 'Carga (kg)',
@@ -60,7 +57,7 @@ const HistoryModal: React.FC<{ studentId: string; exerciseId: string; exerciseNa
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-300">
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[32px] overflow-hidden shadow-2xl p-8 space-y-6">
+      <div className="relative w-full max-lg:mx-4 max-w-lg bg-slate-900 border border-slate-800 rounded-[32px] overflow-hidden shadow-2xl p-8 space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h3 className="text-xl font-black text-white uppercase italic tracking-tighter">Histórico de Força</h3>
@@ -93,7 +90,6 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
   
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState('Todos');
-  const [previewEx, setPreviewEx] = useState<Exercise | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState<{ id: string; name: string } | null>(null);
@@ -101,7 +97,6 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
   const activeDivisao = useMemo(() => divisoes.find(d => d.letra === activeLetra) || divisoes[0], [divisoes, activeLetra]);
 
   const categories = useMemo(() => {
-    // Add explicit type and fallback to avoid unknown type issues
     const cats = new Set((exercisesLibrary || []).map(ex => ex.grupo_muscular));
     return ['Todos', ...Array.from(cats).sort()];
   }, [exercisesLibrary]);
@@ -137,7 +132,9 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
       descanso: '60s',
       observacoes_especificas: '',
       grupo_muscular: ex.grupo_muscular,
-      equipamento: ex.equipamento
+      equipamento: ex.equipamento,
+      video_url: ex.video_url,
+      instrucoes: ex.instrucoes
     };
     
     setDivisoes(prev => prev.map(d => 
@@ -188,7 +185,6 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
     if (isSaving) return;
     setIsSaving(true);
     
-    // Simular delay de rede/persistência
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     const payload: PlanilhaTreino = {
@@ -211,8 +207,6 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
 
   return (
     <div className="p-6 space-y-8 animate-in slide-in-from-right-4 duration-500 pb-32 max-w-5xl mx-auto">
-      {previewEx && <VideoModal videoUrl={previewEx.video_url || ''} title={previewEx.nome || ''} onClose={() => setPreviewEx(null)} />}
-      
       {selectedHistory && (
         <HistoryModal 
           studentId={student.id} 
@@ -230,7 +224,7 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
             <div className="p-6 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-10 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-black text-white uppercase tracking-tighter italic">Gestão Treinador Jorge</h3>
+                  <h3 className="text-xl font-black text-white uppercase tracking-tighter italic">Biblioteca Team Prado</h3>
                   <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mt-1">Adicionar ao Treino {activeLetra}</p>
                 </div>
                 <button onClick={() => setShowLibrary(false)} className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-2xl transition-all">
@@ -238,7 +232,7 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
                 </button>
               </div>
               <input 
-                type="text" autoFocus placeholder="BUSCAR MOVIMENTO..."
+                type="text" autoFocus placeholder="BUSCAR MOVIMENTO NO LAB..."
                 value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-xs font-bold text-white focus:outline-none focus:border-orange-500 transition-all placeholder:text-slate-700 uppercase"
               />
@@ -261,7 +255,12 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
                             <p className="font-black text-white uppercase text-sm tracking-tight group-hover:text-orange-400 transition-colors">{ex.nome}</p>
                             <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">{ex.equipamento} • {ex.categoria}</p>
                           </div>
-                          <button onClick={() => addExercise(ex)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${alreadyIn ? 'bg-orange-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:bg-orange-500 hover:text-slate-950'}`}>{alreadyIn ? <Icons.Check className="w-5 h-5" /> : <Icons.Plus className="w-5 h-5" />}</button>
+                          <div className="flex items-center gap-2">
+                            {ex.video_url && (
+                              <button onClick={() => window.open(ex.video_url, '_blank')} className="p-3 bg-slate-800 hover:bg-slate-700 text-orange-500 rounded-xl transition-all" title="Ver Vídeo"><Icons.Play className="w-5 h-5 fill-current" /></button>
+                            )}
+                            <button onClick={() => addExercise(ex)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${alreadyIn ? 'bg-orange-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:bg-orange-500 hover:text-slate-950'}`}>{alreadyIn ? <Icons.Check className="w-5 h-5" /> : <Icons.Plus className="w-5 h-5" />}</button>
+                          </div>
                         </div>
                       );
                     })}
@@ -355,7 +354,6 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
 
             <div className="space-y-6">
               {activeDivisao?.exercicios && activeDivisao.exercicios.length > 0 ? (
-                // Explicitly typing map parameter to resolve unknown type issues
                 activeDivisao.exercicios.map((ex: SelecedExercise, idx: number) => {
                   const hist = (loadHistory || []).filter(h => h.studentId === student.id && h.exerciseId === ex.id_exercicio).sort((a,b) => b.timestamp - a.timestamp);
                   const lastWeight = hist[0]?.weight;
@@ -363,9 +361,9 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
                   return (
                     <div key={`${ex.id_exercicio}-${idx}`} className="p-8 bg-slate-950/50 border border-slate-800 rounded-[32px] space-y-8 relative overflow-hidden group hover:border-slate-700 transition-all">
                       <div className="flex justify-between items-start">
-                        <div>
+                        <div className="flex-1">
                           <h3 className="text-xl font-black text-white uppercase tracking-tight group-hover:text-orange-400 transition-colors">{ex.nome}</h3>
-                          <div className="flex gap-2 mt-1 items-center">
+                          <div className="flex gap-2 mt-1 items-center flex-wrap">
                             <span className="text-[9px] font-black text-orange-500 uppercase tracking-widest bg-orange-500/10 px-2 py-0.5 rounded-lg">{ex.grupo_muscular}</span>
                             {lastWeight && (
                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-slate-800 px-2 py-0.5 rounded-lg">Last: {lastWeight}kg</span>
@@ -380,6 +378,7 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
                         </div>
                         <button onClick={() => removeExercise(idx)} className="w-10 h-10 rounded-xl bg-slate-950/50 flex items-center justify-center text-slate-700 hover:text-red-500 transition-all"><Icons.Trash className="w-5 h-5" /></button>
                       </div>
+
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
                         <div className="space-y-2">
                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Séries</label>
@@ -394,8 +393,30 @@ const WorkoutEditor: React.FC<WorkoutEditorProps> = ({
                           <input type="text" value={ex.descanso} onChange={(e) => updateExercise(idx, { descanso: e.target.value })} className="w-full bg-slate-950 rounded-xl px-4 py-3 text-white font-black border border-slate-800 focus:border-orange-500 outline-none" placeholder="60s"/>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Obs</label>
-                          <input type="text" value={ex.observacoes_especificas} onChange={(e) => updateExercise(idx, { observacoes_especificas: e.target.value })} className="w-full bg-slate-950 rounded-xl px-4 py-3 text-white font-bold border border-slate-800 focus:border-orange-500 outline-none" placeholder="Técnica..."/>
+                          <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Obs Interna</label>
+                          <input type="text" value={ex.observacoes_especificas} onChange={(e) => updateExercise(idx, { observacoes_especificas: e.target.value })} className="w-full bg-slate-950 rounded-xl px-4 py-3 text-white font-bold border border-slate-800 focus:border-orange-500 outline-none" placeholder="Cargas, falhas..."/>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-800/50">
+                        <div className="space-y-2">
+                          <label className="text-[9px] font-black text-orange-500 uppercase tracking-widest ml-1">Link do Vídeo (YT/IG)</label>
+                          <input 
+                            type="text" 
+                            value={ex.video_url || ''} 
+                            onChange={(e) => updateExercise(idx, { video_url: e.target.value })} 
+                            className="w-full bg-slate-900/50 rounded-2xl px-5 py-4 text-white text-xs font-bold border border-slate-800 focus:border-orange-500 outline-none transition-all" 
+                            placeholder="https://youtube.com/..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[9px] font-black text-orange-500 uppercase tracking-widest ml-1">Instruções Técnicas de Execução</label>
+                          <textarea 
+                            value={ex.instrucoes || ''} 
+                            onChange={(e) => updateExercise(idx, { instrucoes: e.target.value })} 
+                            className="w-full bg-slate-900/50 rounded-2xl px-5 py-4 text-white text-xs font-medium border border-slate-800 focus:border-orange-500 outline-none transition-all h-20 resize-none" 
+                            placeholder="Dicas para o aluno sobre biomecânica e segurança..."
+                          />
                         </div>
                       </div>
                     </div>

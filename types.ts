@@ -21,10 +21,11 @@ export interface User {
 export interface VideoContent {
   id: string;
   titulo: string;
-  categoria: 'Execução' | 'Dieta' | 'Mentalidade' | 'Recados';
+  descricao?: string;
+  categoria: string;
   url: string;
-  data_postagem: number;
   thumbnail_url: string;
+  data_postagem: number;
   fixado: boolean;
 }
 
@@ -84,8 +85,8 @@ export interface LoadEntry {
 }
 
 export interface DivisaoTreino {
-  letra: string; // "A", "B", "C"...
-  nome: string; // "Membros Superiores"
+  letra: string;
+  nome: string;
   exercicios: SelecedExercise[];
 }
 
@@ -94,7 +95,7 @@ export interface PlanilhaTreino {
   id_aluno: string;
   personalId: string;
   data_criacao: number;
-  nome_da_planilha: string; // Ex: "Protocolo de Definição 2024"
+  nome_da_planilha: string;
   divisoes: DivisaoTreino[];
 }
 
@@ -102,7 +103,7 @@ export interface CheckIn {
   id: string;
   studentId: string;
   workoutId: string;
-  letraTreino?: string; // Letra da divisão executada
+  letraTreino?: string;
   timestamp: number;
-  durationSeconds?: number; // Tempo total do treino
+  durationSeconds?: number;
 }
