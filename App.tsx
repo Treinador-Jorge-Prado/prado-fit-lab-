@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, UserRole, PlanilhaTreino, Exercise, CheckIn, EvolutionEntry, Biometrics, VideoContent, LoadEntry } from './types';
-import { MOCK_PERSONAL, MOCK_STUDENTS, INITIAL_EXERCISES, MOCK_EVOLUTION } from './mockData';
+import { MOCK_PERSONAL, INITIAL_EXERCISES, MOCK_EVOLUTION } from './mockData';
 import PersonalDashboard from './components/PersonalDashboard';
 import StudentView from './components/StudentView';
 import WorkoutEditor from './components/WorkoutEditor';
@@ -11,6 +11,7 @@ import VideoManager from './components/VideoManager';
 import GerenciadorExercicios from './components/GerenciadorExercicios';
 import { Icons } from './constants';
 import { salvarCarga } from './persistenceService';
+import { getAlunos, saveAluno, getConteudos, saveConteudo, removeConteudo, updateWorkout } from './supabaseService';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -34,70 +35,58 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'LOGIN' | 'DASHBOARD' | 'STUDENT_VIEW' | 'WORKOUT_EDITOR' | 'PROFILE_VIEW' | 'VIDEO_LIBRARY' | 'VIDEO_MANAGER' | 'EXERCISE_MANAGER'>('LOGIN');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
-  const syncStorage = useCallback((key: string, data: any) => {
+  // Função para carregar dados do Supabase
+  const loadSupabaseData = useCallback(async () => {
     try {
-      localStorage.setItem(key, JSON.stringify(data));
-    } catch (e) {
-      console.error(`Erro ao sincronizar ${key}:`, e);
+      const [remoteStudents, remoteVideos] = await Promise.all([
+        getAlunos(),
+        getConteudos()
+      ]);
+      
+      setStudents(remoteStudents);
+      setVideos(remoteVideos);
+      
+      // Extrai os treinos dos alunos para o estado de workouts
+      const remoteWorkouts = remoteStudents
+        .filter(s => (s as any).workout_data)
+        .map(s => (s as any).workout_data as PlanilhaTreino);
+      setWorkouts(remoteWorkouts);
+
+      return { students: remoteStudents, videos: remoteVideos };
+    } catch (error) {
+      alert("Erro ao sincronizar com o servidor Prado Fit Lab. Verifique sua conexão.");
+      console.error(error);
+      return null;
     }
   }, []);
 
   useEffect(() => {
     const initData = async () => {
       setIsLoading(true);
-      try {
-        const storedStudents = localStorage.getItem('students');
-        let loadedStudents: User[] = storedStudents ? JSON.parse(storedStudents) : MOCK_STUDENTS;
-        loadedStudents = loadedStudents.map(s => ({...s, password: s.password || '1234'}));
+      
+      // Tenta carregar do Supabase primeiro
+      const data = await loadSupabaseData();
+      
+      // Fallback para exercícios (ainda no localStorage para este MVP ou Mock)
+      const storedExercises = localStorage.getItem('lab_exercises');
+      setExercises(storedExercises ? JSON.parse(storedExercises) : INITIAL_EXERCISES);
 
-        const storedExercises = localStorage.getItem('lab_exercises');
-        const loadedExercises: Exercise[] = storedExercises ? JSON.parse(storedExercises) : INITIAL_EXERCISES;
-
-        const storedCategories = localStorage.getItem('lab_categories');
-        if (storedCategories) setCategories(JSON.parse(storedCategories));
+      const storedUser = localStorage.getItem('currentUser');
+      if (storedUser && data) {
+        const parsedUser = JSON.parse(storedUser);
+        const refreshedUser = data.students.find(s => s.id === parsedUser.id) || 
+                             (parsedUser.role === UserRole.PERSONAL ? MOCK_PERSONAL : parsedUser);
         
-        setStudents(loadedStudents);
-        setExercises(loadedExercises);
-        setWorkouts(JSON.parse(localStorage.getItem('workouts') || '[]'));
-        setCheckins(JSON.parse(localStorage.getItem('checkins') || '[]'));
-        setVideos(JSON.parse(localStorage.getItem('lab_content_library') || '[]'));
-        setLoadHistory(JSON.parse(localStorage.getItem('load_history') || '[]'));
-
-        const storedUser = localStorage.getItem('currentUser');
-        if (storedUser) {
-          const parsedUser = JSON.parse(storedUser);
-          const refreshedUser = loadedStudents.find(s => s.id === parsedUser.id) || (parsedUser.role === UserRole.PERSONAL ? MOCK_PERSONAL : parsedUser);
-          setCurrentUser(refreshedUser);
-          const storedView = localStorage.getItem('currentView');
-          if (storedView) setCurrentView(storedView as any);
-          else setCurrentView(refreshedUser.role === UserRole.PERSONAL ? 'DASHBOARD' : 'STUDENT_VIEW');
-        }
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
-        if (token) {
-          setIsValidatingToken(true);
-          await new Promise(resolve => setTimeout(resolve, 800)); 
-          try {
-            const decodedEmail = atob(token).toLowerCase().trim();
-            const student = loadedStudents.find(s => s.email.toLowerCase().trim() === decodedEmail);
-            if (student) {
-              setCurrentUser(student);
-              setCurrentView('STUDENT_VIEW');
-              localStorage.setItem('currentUser', JSON.stringify(student));
-              window.history.replaceState({}, document.title, window.location.pathname);
-            }
-          } catch (e) { console.error("Protocolo Inválido", e); }
-          setIsValidatingToken(false);
-        }
-      } catch (error) {
-        console.error("Falha na inicialização do Lab:", error);
-      } finally {
-        setIsLoading(false);
+        setCurrentUser(refreshedUser);
+        const storedView = localStorage.getItem('currentView');
+        if (storedView) setCurrentView(storedView as any);
+        else setCurrentView(refreshedUser.role === UserRole.PERSONAL ? 'DASHBOARD' : 'STUDENT_VIEW');
       }
+
+      setIsLoading(false);
     };
     initData();
-  }, []);
+  }, [loadSupabaseData]);
 
   useEffect(() => {
     if (currentUser) {
@@ -112,7 +101,14 @@ const App: React.FC = () => {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Refresh data from Supabase before login
+    const data = await loadSupabaseData();
+    if (!data) {
+      setIsLoggingIn(false);
+      return;
+    }
+
     const cleanEmail = identifier.toLowerCase().trim();
     const cleanPass = password.trim();
 
@@ -124,14 +120,7 @@ const App: React.FC = () => {
         alert("Acesso Negado: Credenciais Jorge Prado inválidas.");
       }
     } else {
-      if (cleanEmail === 'aluno@teste.com' && cleanPass === '123') {
-        const student = students[0];
-        setCurrentUser(student);
-        setCurrentView('STUDENT_VIEW');
-        setIsLoggingIn(false);
-        return;
-      }
-      const student = students.find(s => s.email.toLowerCase().trim() === cleanEmail);
+      const student = data.students.find(s => s.email.toLowerCase().trim() === cleanEmail);
       if (student) {
         if (student.password === cleanPass) {
           setCurrentUser(student);
@@ -152,52 +141,69 @@ const App: React.FC = () => {
     setLoginRole(null);
     setIdentifier('');
     setPassword('');
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('currentView');
   };
 
-  const handleAddMember = (newMember: User) => {
-    const updated = [...students, newMember];
-    setStudents(updated);
-    syncStorage('students', updated);
+  const handleAddMember = async (newMember: User) => {
+    try {
+      await saveAluno(newMember);
+      await loadSupabaseData(); // Sync
+    } catch (e) {
+      alert("Erro ao salvar membro no servidor.");
+    }
   };
 
-  const handleUpdateMember = (updatedMember: User) => {
-    const updated = students.map(s => s.id === updatedMember.id ? updatedMember : s);
-    setStudents(updated);
-    syncStorage('students', updated);
-    if (currentUser?.id === updatedMember.id) setCurrentUser(updatedMember);
+  const handleUpdateMember = async (updatedMember: User) => {
+    try {
+      await saveAluno(updatedMember);
+      await loadSupabaseData();
+      if (currentUser?.id === updatedMember.id) setCurrentUser(updatedMember);
+    } catch (e) {
+      alert("Erro ao atualizar dados.");
+    }
   };
 
-  const handleAddVideo = (newVideo: VideoContent) => {
-    const updated = [newVideo, ...videos];
-    setVideos(updated);
-    syncStorage('lab_content_library', updated);
+  const handleAddVideo = async (newVideo: VideoContent) => {
+    try {
+      await saveConteudo(newVideo);
+      await loadSupabaseData();
+    } catch (e) {
+      alert("Erro ao publicar conteúdo.");
+    }
   };
 
-  const handleUpdateVideo = (updatedVideo: VideoContent) => {
-    const updated = videos.map(v => v.id === updatedVideo.id ? updatedVideo : v);
-    setVideos(updated);
-    syncStorage('lab_content_library', updated);
+  const handleUpdateVideo = async (updatedVideo: VideoContent) => {
+    try {
+      await saveConteudo(updatedVideo);
+      await loadSupabaseData();
+    } catch (e) {
+      alert("Erro ao atualizar conteúdo.");
+    }
   };
 
-  const handleRemoveVideo = (id: string) => {
-    const updated = videos.filter(v => v.id !== id);
-    setVideos(updated);
-    syncStorage('lab_content_library', updated);
+  const handleRemoveVideo = async (id: string) => {
+    try {
+      await removeConteudo(id);
+      await loadSupabaseData();
+    } catch (e) {
+      alert("Erro ao remover conteúdo.");
+    }
   };
 
-  const handleSaveWorkout = (workout: PlanilhaTreino) => {
-    const updated = [...workouts.filter(w => w.id_aluno !== workout.id_aluno), workout];
-    setWorkouts(updated);
-    syncStorage('workouts', updated);
-    setCurrentView('DASHBOARD');
+  const handleSaveWorkout = async (workout: PlanilhaTreino) => {
+    try {
+      await updateWorkout(workout.id_aluno, workout);
+      await loadSupabaseData();
+      setCurrentView('DASHBOARD');
+    } catch (e) {
+      alert("Erro ao salvar protocolo de treino.");
+    }
   };
 
   const addCheckIn = (checkin: CheckIn) => {
     const updated = [...checkins, checkin];
     setCheckins(updated);
-    syncStorage('checkins', updated);
+    // TODO: Migrar checkins para Supabase também se necessário para analytics do Jorge
+    localStorage.setItem('checkins', JSON.stringify(updated));
   };
 
   const handleRegisterLoad = async (entry: LoadEntry) => {
@@ -234,12 +240,9 @@ const App: React.FC = () => {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-950 relative overflow-hidden">
         <div className="w-full max-sm:px-4 max-w-sm space-y-12 text-center relative z-10">
           
-          {/* NOVA LOGO COM SILHUETA E GLOW */}
           <div className="space-y-6">
             <div className="relative mx-auto w-32 h-32 flex items-center justify-center">
-              {/* Brilho laranja atrás da silhueta */}
               <div className="absolute inset-0 bg-orange-500/20 blur-[45px] rounded-full scale-150 animate-pulse" />
-              
               <div className="relative w-24 h-24 bg-orange-500/10 flex items-center justify-center rounded-[32px] border border-orange-500/20 shadow-[0_0_50px_rgba(249,115,22,0.15)]">
                  <Icons.Bodybuilder className="w-16 h-16 text-orange-500" />
               </div>
@@ -347,9 +350,9 @@ const App: React.FC = () => {
           <GerenciadorExercicios 
             exercises={exercises}
             categories={categories}
-            onAddExercise={(ex) => { setExercises(prev => [...prev, ex]); syncStorage('lab_exercises', [...exercises, ex]); }}
-            onRemoveExercise={(id) => { const filtered = exercises.filter(ex => ex.id !== id); setExercises(filtered); syncStorage('lab_exercises', filtered); }}
-            onAddCategory={(cat) => { const updated = [...categories, cat]; setCategories(updated); syncStorage('lab_categories', updated); }}
+            onAddExercise={(ex) => { setExercises(prev => [...prev, ex]); localStorage.setItem('lab_exercises', JSON.stringify([...exercises, ex])); }}
+            onRemoveExercise={(id) => { const filtered = exercises.filter(ex => ex.id !== id); setExercises(filtered); localStorage.setItem('lab_exercises', JSON.stringify(filtered)); }}
+            onAddCategory={(cat) => { const updated = [...categories, cat]; setCategories(updated); localStorage.setItem('lab_categories', JSON.stringify(updated)); }}
           />
         )}
       </main>
