@@ -21,6 +21,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [muralFotos, setMuralFotos] = useState<any[]>([]);
   const [isLoadingGaleria, setIsLoadingGaleria] = useState(true);
+  const [fotoSelecionada, setFotoSelecionada] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,6 +49,26 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     };
     buscarFotos();
   }, [student.id, student.url_shape_atual]);
+
+  const handleDeleteFoto = async (id: string) => {
+    // Removi o confirm() para evitar o bloqueio do sandbox
+    try {
+      const { error } = await supabase
+        .from('evolucao_fotos')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Erro ao deletar:', error.message);
+        alert('Erro ao excluir'); 
+      } else {
+        // Remove da tela imediatamente
+        setMuralFotos(current => current.filter(f => f.id !== id));
+      }
+    } catch (err) {
+      console.error('Erro inesperado:', err);
+    }
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -148,10 +169,25 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   <img 
                     src={foto.url_foto} 
                     alt="Registro Evolução" 
-                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 cursor-zoom-in"
                     loading="lazy"
                     referrerPolicy="no-referrer"
+                    onClick={() => setFotoSelecionada(foto.url_foto)}
                   />
+                  
+                  {/* Botão de Excluir - Apenas para Alunos */}
+                  {!isTrainerMode && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFoto(foto.id);
+                      }}
+                      className="absolute top-4 right-4 z-10 p-3 bg-red-500/80 hover:bg-red-500 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm shadow-xl transform hover:scale-110"
+                    >
+                      <Icons.Trash className="w-4 h-4" />
+                    </button>
+                  )}
+
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/90 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
                       <p className="text-[8px] font-black text-orange-500 uppercase tracking-widest">
                         {foto.created_at ? new Date(foto.created_at).toLocaleDateString('pt-BR') : 'Sem Data'}
@@ -193,6 +229,24 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal de Zoom */}
+      {fotoSelecionada && (
+        <div 
+          className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300"
+          onClick={() => setFotoSelecionada(null)}
+        >
+          <button className="absolute top-8 right-8 text-white/50 hover:text-white transition-colors">
+            <Icons.X className="w-8 h-8" />
+          </button>
+          
+          <img 
+            src={fotoSelecionada} 
+            className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl object-contain animate-in zoom-in-95 duration-300"
+            alt="Visualização completa"
+          />
+        </div>
+      )}
     </div>
   );
 };
