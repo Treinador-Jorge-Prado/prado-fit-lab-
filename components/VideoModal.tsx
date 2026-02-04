@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Icons } from '../constants';
+import { Icons, IconProps } from '../constants';
 
 interface VideoModalProps {
   videoUrl: string;
@@ -54,7 +54,11 @@ const VideoModal: React.FC<VideoModalProps> = ({ videoUrl, onClose, title, instr
             onClick={onClose}
             className="p-3 bg-orange-500 text-slate-950 rounded-2xl hover:bg-orange-400 transition-all shadow-lg active:scale-90"
           >
-            <Icons.Plus className="rotate-45 w-6 h-6" strokeWidth={3} />
+            <Icons.Plus 
+              className="rotate-45" 
+              size={24}
+              strokeWidth={3}
+            />
           </button>
         </div>
         
@@ -73,7 +77,7 @@ const VideoModal: React.FC<VideoModalProps> = ({ videoUrl, onClose, title, instr
               ></iframe>
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-700 gap-3">
-                <Icons.Play className="w-12 h-12 opacity-20" />
+                <Icons.Play className="opacity-20" size={48} strokeWidth={2} />
                 <span className="text-[10px] font-black uppercase tracking-widest">Vídeo Indisponível</span>
               </div>
             )}

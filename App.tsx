@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { User, UserRole, PlanilhaTreino, Exercise, CheckIn, EvolutionEntry, Biometrics, VideoContent, LoadEntry } from './types';
+import { User, UserRole, PlanilhaTreino, Exercise, CheckIn, EvolutionEntry, VideoContent, LoadEntry } from './types';
 import { MOCK_PERSONAL, INITIAL_EXERCISES, MOCK_EVOLUTION } from './mockData';
 import PersonalDashboard from './components/PersonalDashboard';
 import StudentView from './components/StudentView';
@@ -10,7 +10,7 @@ import VideoLibrary from './components/VideoLibrary';
 import VideoManager from './components/VideoManager';
 import GerenciadorExercicios from './components/GerenciadorExercicios';
 import { Icons } from './constants';
-import { getAlunos, saveAluno, getConteudos, saveConteudo, removeConteudo, updateWorkout, uploadShapePhoto, supabase } from './supabaseService';
+import { getAlunos, saveAluno, getConteudos, saveConteudo, removeConteudo, getWorkouts, saveWorkout, deleteWorkout, uploadShapePhoto, supabase } from './supabaseService';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -32,23 +32,21 @@ const App: React.FC = () => {
 
   const [currentView, setCurrentView] = useState<'LOGIN' | 'DASHBOARD' | 'STUDENT_VIEW' | 'WORKOUT_EDITOR' | 'PROFILE_VIEW' | 'VIDEO_LIBRARY' | 'VIDEO_MANAGER' | 'EXERCISE_MANAGER'>('LOGIN');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
 
   const loadSupabaseData = useCallback(async () => {
     try {
-      const [remoteStudents, remoteVideos] = await Promise.all([
+      const [remoteStudents, remoteVideos, remoteWorkouts] = await Promise.all([
         getAlunos(),
-        getConteudos()
+        getConteudos(),
+        getWorkouts()
       ]);
       
       setStudents(remoteStudents);
       setVideos(remoteVideos);
-      
-      const remoteWorkouts = remoteStudents
-        .filter(s => (s as any).workout_data)
-        .map(s => (s as any).workout_data as PlanilhaTreino);
       setWorkouts(remoteWorkouts);
 
-      return { students: remoteStudents, videos: remoteVideos };
+      return { students: remoteStudents, videos: remoteVideos, workouts: remoteWorkouts };
     } catch (error) {
       console.error("FALHA CRÍTICA AO SINCRONIZAR LAB:", error);
       return null;
@@ -123,12 +121,10 @@ const App: React.FC = () => {
     try {
       const publicUrl = await uploadShapePhoto(currentUser.id, file);
       
-      // REGISTRO NO MURAL (O que estava faltando)
       await supabase.from('evolucao_fotos').insert([
         { aluno_id: currentUser.id, url_foto: publicUrl }
       ]);
 
-      // ATUALIZAÇÃO DO PERFIL
       await supabase.from('alunos').update({ url_shape_atual: publicUrl }).eq('id', currentUser.id);
 
       await loadSupabaseData();
@@ -144,6 +140,7 @@ const App: React.FC = () => {
     setCurrentView('LOGIN');
     setLoginRole(null);
     setSelectedStudentId(null);
+    setSelectedWorkoutId(null);
   };
 
   const handleOpenStudentProfile = (studentId: string) => {
@@ -155,7 +152,7 @@ const App: React.FC = () => {
     ? students.find(s => s.id === selectedStudentId) 
     : currentUser;
 
-  const currentWorkout = workouts.find(w => w.id_aluno === studentBeingViewed?.id);
+  const studentWorkouts = workouts.filter(w => w.id_aluno === studentBeingViewed?.id);
 
   if (isLoading) {
     return (
@@ -214,7 +211,17 @@ const App: React.FC = () => {
             {currentView === 'DASHBOARD' && (
               <PersonalDashboard 
                 students={students} workouts={workouts} checkins={checkins}
-                onOpenWorkoutEditor={(sid) => { setSelectedStudentId(sid); setCurrentView('WORKOUT_EDITOR'); }} 
+                onOpenWorkoutEditor={(sid, wid) => { 
+                  setSelectedStudentId(sid); 
+                  setSelectedWorkoutId(wid || null);
+                  setCurrentView('WORKOUT_EDITOR'); 
+                }} 
+                onDeleteWorkout={async (id) => {
+                  if (confirm("Excluir este protocolo permanentemente?")) {
+                    await deleteWorkout(id);
+                    await loadSupabaseData();
+                  }
+                }}
                 onAddMember={async (m) => { await saveAluno(m); await loadSupabaseData(); }}
                 onUpdateMember={async (m) => { await saveAluno(m); await loadSupabaseData(); }}
                 onViewProfile={handleOpenStudentProfile}
@@ -222,7 +229,8 @@ const App: React.FC = () => {
             )}
             {currentView === 'STUDENT_VIEW' && (
               <StudentView 
-                student={currentUser!} workout={currentWorkout} 
+                student={currentUser!} 
+                workouts={studentWorkouts} 
                 onCheckIn={(c) => setCheckins([...checkins, c])}
                 onRegisterLoad={(l) => setLoadHistory([...loadHistory, l])}
                 loadHistory={loadHistory}
@@ -236,16 +244,23 @@ const App: React.FC = () => {
                 onUploadShape={handleUploadShape}
                 isTrainerMode={currentUser?.role === UserRole.PERSONAL}
                 onBack={currentUser?.role === UserRole.PERSONAL ? () => setCurrentView('DASHBOARD') : undefined}
-                workout={currentWorkout}
+                workout={studentWorkouts[0]}
               />
             )}
             {currentView === 'WORKOUT_EDITOR' && selectedStudentId && (
               <WorkoutEditor 
                 student={students.find(s => s.id === selectedStudentId)!}
-                existingWorkout={workouts.find(w => w.id_aluno === selectedStudentId)}
+                existingWorkout={workouts.find(w => w.id === selectedWorkoutId)}
                 exercisesLibrary={exercises}
-                onSave={async (w) => { await updateWorkout(w.id_aluno, w); await loadSupabaseData(); setCurrentView('DASHBOARD'); }}
-                onCancel={() => setCurrentView('DASHBOARD')}
+                onSave={async (w) => { 
+                  await saveWorkout(w); 
+                  await loadSupabaseData(); 
+                  setCurrentView('DASHBOARD'); 
+                }}
+                onCancel={() => {
+                  setSelectedWorkoutId(null);
+                  setCurrentView('DASHBOARD');
+                }}
                 loadHistory={loadHistory}
               />
             )}
@@ -271,7 +286,7 @@ const App: React.FC = () => {
           <nav className="fixed bottom-0 left-0 right-0 h-20 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 flex items-center justify-around z-50">
             {currentUser?.role === UserRole.PERSONAL ? (
               <>
-                <button onClick={() => setCurrentView('DASHBOARD')} className={`flex flex-col items-center gap-1 ${currentView === 'DASHBOARD' ? 'text-orange-500' : 'text-slate-500'}`}>
+                <button onClick={() => { setSelectedStudentId(null); setSelectedWorkoutId(null); setCurrentView('DASHBOARD'); }} className={`flex flex-col items-center gap-1 ${currentView === 'DASHBOARD' ? 'text-orange-500' : 'text-slate-500'}`}>
                   <Icons.User className="w-6 h-6" /><span className="text-[8px] uppercase font-black">Membros</span>
                 </button>
                 <button onClick={() => setCurrentView('EXERCISE_MANAGER')} className={`flex flex-col items-center gap-1 ${currentView === 'EXERCISE_MANAGER' ? 'text-orange-500' : 'text-slate-500'}`}>

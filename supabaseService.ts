@@ -17,7 +17,7 @@ export interface EvolucaoFoto {
 export const getAlunos = async (): Promise<User[]> => {
   const { data, error } = await supabase
     .from('alunos')
-    .select('id, nome, email, senha, treinos, url_shape_atual');
+    .select('id, nome, email, senha, url_shape_atual');
   
   if (error) throw error;
 
@@ -27,49 +27,57 @@ export const getAlunos = async (): Promise<User[]> => {
     email: row.email,
     password: row.senha,
     role: UserRole.STUDENT,
-    workout_data: row.treinos,
     url_shape_atual: row.url_shape_atual
   } as any));
 };
 
-export const getGaleriaFotos = async (alunoId: string): Promise<EvolucaoFoto[]> => {
+export const getWorkouts = async (): Promise<PlanilhaTreino[]> => {
   const { data, error } = await supabase
-    .from('evolucao_fotos')
-    .select('*')
-    .eq('aluno_id', alunoId);
-
+    .from('planilhas')
+    .select('*');
+  
   if (error) {
-    console.error("ERRO AO CARREGAR MURAL:", error.message);
+    console.error("Erro ao buscar planilhas:", error.message);
     return [];
   }
-  return data || [];
-};
-
-export const uploadShapePhoto = async (studentId: string, file: File): Promise<string> => {
-  const timestamp = Date.now();
-  const fileExt = file.name.split('.').pop() || 'jpg';
-  const filePath = `${studentId}/${timestamp}.${fileExt}`;
-
-  // 1. Upload para o bucket 'shapes'
-  const { error: uploadError } = await supabase.storage
-    .from('shapes')
-    .upload(filePath, file);
-
-  if (uploadError) throw uploadError;
-
-  // 2. URL Pública
-  const { data } = supabase.storage
-    .from('shapes')
-    .getPublicUrl(filePath);
   
-  return data.publicUrl;
+  return (data || []).map(row => ({
+    id: row.id,
+    id_aluno: row.id_aluno, // Mapeado conforme solicitação: id_aluno
+    personalId: row.personal_id,
+    data_criacao: new Date(row.created_at).getTime(),
+    nome_da_planilha: row.nome_da_planilha, // Mapeado conforme solicitação: nome_da_planilha
+    divisoes: row.divisoes || [] // Mapeado conforme solicitação: divisoes
+  }));
 };
 
-export const updateWorkout = async (studentId: string, workout: PlanilhaTreino) => {
+export const saveWorkout = async (workout: PlanilhaTreino) => {
+  // Payload ajustado para bater exatamente com as colunas do banco
+  const payload = {
+    id: workout.id,
+    id_aluno: workout.id_aluno, // FK para o UUID do aluno
+    personal_id: workout.personalId,
+    nome_da_planilha: workout.nome_da_planilha,
+    divisoes: workout.divisoes, // Array JSON das divisões
+    created_at: new Date(workout.data_criacao).toISOString()
+  };
+
   const { error } = await supabase
-    .from('alunos')
-    .update({ treinos: workout })
-    .eq('id', studentId);
+    .from('planilhas')
+    .upsert(payload, { onConflict: 'id' }); // Garante o overwrite se o ID existir
+
+  if (error) {
+    console.error("Erro ao salvar planilha:", error.message);
+    throw error;
+  }
+};
+
+export const deleteWorkout = async (workoutId: string) => {
+  const { error } = await supabase
+    .from('planilhas')
+    .delete()
+    .eq('id', workoutId);
+  
   if (error) throw error;
 };
 
@@ -78,7 +86,6 @@ export const saveAluno = async (aluno: any) => {
     nome: aluno.name || aluno.nome,
     email: aluno.email,
     senha: aluno.password || aluno.senha,
-    treinos: aluno.workout_data || aluno.treinos || { A: [], B: [], C: [] },
     url_shape_atual: aluno.url_shape_atual || null
   };
   if (aluno.id && typeof aluno.id === 'string' && aluno.id.length > 20) {
@@ -122,4 +129,22 @@ export const saveConteudo = async (video: any) => {
 export const removeConteudo = async (id: string) => {
   const { error } = await supabase.from('conteudos').delete().eq('id', id);
   if (error) throw error;
+};
+
+export const uploadShapePhoto = async (studentId: string, file: File): Promise<string> => {
+  const timestamp = Date.now();
+  const fileExt = file.name.split('.').pop() || 'jpg';
+  const filePath = `${studentId}/${timestamp}.${fileExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('shapes')
+    .upload(filePath, file);
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage
+    .from('shapes')
+    .getPublicUrl(filePath);
+  
+  return data.publicUrl;
 };

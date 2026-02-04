@@ -6,7 +6,7 @@ import { supabase } from '../supabaseService';
 
 interface StudentViewProps {
   student: User;
-  workout?: PlanilhaTreino;
+  workouts: PlanilhaTreino[];
   onCheckIn: (checkin: CheckIn) => void;
   onRegisterLoad: (entry: LoadEntry) => void;
   loadHistory: LoadEntry[];
@@ -93,8 +93,9 @@ const PasswordModal: React.FC<{ student: User; onClose: () => void; onSave: (upd
   );
 };
 
-const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, onRegisterLoad, loadHistory, onUpdateProfile }) => {
-  const [activeLetra, setActiveLetra] = useState<string | null>(workout?.divisoes?.[0]?.letra || null);
+const StudentView: React.FC<StudentViewProps> = ({ student, workouts = [], onCheckIn, onRegisterLoad, loadHistory, onUpdateProfile }) => {
+  const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
+  const [activeLetra, setActiveLetra] = useState<string | null>(null);
   const [checkedExercises, setCheckedExercises] = useState<Record<string, boolean>>({});
   const [exerciseLoads, setExerciseLoads] = useState<Record<string, string>>({});
   const [isFinished, setIsFinished] = useState(false);
@@ -110,6 +111,8 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
 
   const [restSeconds, setRestSeconds] = useState<number | null>(null);
   const restInterval = useRef<number | null>(null);
+
+  const workout = workouts.find(w => w.id === selectedWorkoutId);
 
   useEffect(() => {
     if (isWorkoutStarted && !isPaused) {
@@ -181,7 +184,6 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
       if (loadStr) {
         const weight = parseFloat(loadStr.replace(/[^0-9.]/g, ''));
         if (!isNaN(weight)) {
-          // Normalização para CAIXA ALTA
           const nomeExercicioUpper = ex.nome.toUpperCase().trim();
           
           cargasParaSalvar.push({
@@ -259,25 +261,101 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
             setCheckedExercises({});
             setExerciseLoads({});
             setStopwatchSeconds(0);
+            setSelectedWorkoutId(null);
+            setActiveLetra(null);
           }}
           className="px-8 py-4 bg-slate-900 border-2 border-slate-800 rounded-2xl text-slate-300 font-black uppercase tracking-widest hover:text-white transition-all mt-4"
         >
-          Novo Treino
+          Voltar aos Protocolos
         </button>
       </div>
     );
   }
 
+  // Visualização da Lista de Protocolos
+  if (!selectedWorkoutId) {
+    return (
+      <div className="p-6 space-y-10 max-w-2xl mx-auto animate-in fade-in duration-500 pb-32">
+        {showAccountModal && (
+          <PasswordModal 
+            student={student} 
+            onClose={() => setShowAccountModal(false)} 
+            onSave={onUpdateProfile || (() => {})} 
+          />
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black text-white uppercase tracking-tighter italic">Protocolos</h1>
+            <p className="text-orange-400 font-black uppercase tracking-widest text-[10px]">Team Prado Elite Systems</p>
+          </div>
+          <button 
+            onClick={() => setShowAccountModal(true)}
+            className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-orange-500 hover:border-orange-500 transition-all"
+          >
+            <Icons.User className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="grid gap-6">
+          {workouts.length > 0 ? (
+            workouts.map((w) => (
+              <div 
+                key={w.id}
+                className="p-8 bg-slate-900 border border-slate-800 rounded-[40px] hover:border-orange-500/40 transition-all group shadow-2xl relative overflow-hidden"
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <div className="space-y-1">
+                    <span className="px-3 py-1 bg-orange-500/10 text-orange-400 text-[9px] font-black uppercase tracking-widest rounded-lg">Elite Protocol</span>
+                    <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none group-hover:text-orange-400 transition-colors">
+                      {w.nome_da_planilha}
+                    </h2>
+                  </div>
+                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800">
+                    <Icons.Dumbbell className="text-slate-700 w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="flex -space-x-2">
+                    {w.divisoes?.map(d => (
+                      <div key={d.letra} className="w-8 h-8 rounded-full bg-slate-800 border-2 border-slate-900 flex items-center justify-center text-[10px] font-black text-slate-400">
+                        {d.letra}
+                      </div>
+                    ))}
+                  </div>
+                  <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-2">
+                    {w.divisoes?.length} Divisões • {w.divisoes?.reduce((acc, d) => acc + (d.exercicios?.length || 0), 0)} Exercícios
+                  </span>
+                </div>
+
+                <button 
+                  onClick={() => setSelectedWorkoutId(w.id)}
+                  className="w-full py-5 bg-orange-500 hover:bg-orange-400 text-slate-950 font-black rounded-2xl uppercase tracking-[0.2em] text-xs shadow-xl shadow-orange-500/20 transition-all active:scale-95"
+                >
+                  Iniciar Treino
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="flex flex-col items-center justify-center p-20 text-center border-2 border-dashed border-slate-800 rounded-[40px] bg-slate-900/20 space-y-6">
+              <div className="p-6 bg-slate-900 text-slate-700 rounded-full">
+                 <Icons.Dumbbell className="w-10 h-10" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-white font-black uppercase tracking-widest text-sm italic">Nenhum protocolo prescrito</p>
+                <p className="text-slate-500 italic text-xs">O Treinador Prado ainda não liberou sua carga de trabalho de elite.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Visualização do Treino Ativo (após seleção)
   return (
     <div className="p-6 space-y-8 max-w-2xl mx-auto animate-in fade-in duration-500 pb-32">
-      {showAccountModal && (
-        <PasswordModal 
-          student={student} 
-          onClose={() => setShowAccountModal(false)} 
-          onSave={onUpdateProfile || (() => {})} 
-        />
-      )}
-
       {isWorkoutStarted && (
         <div className="fixed top-20 left-0 right-0 z-50 px-6 animate-in slide-in-from-top-4">
            <div className="max-w-2xl mx-auto bg-slate-900/90 backdrop-blur-xl border-2 border-orange-500/30 rounded-[32px] p-4 flex items-center justify-between shadow-2xl">
@@ -321,27 +399,29 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
 
       <div className={`space-y-4 ${isWorkoutStarted ? 'pt-24' : ''}`}>
         <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-black text-white uppercase tracking-tighter italic">Meu Protocolo</h1>
-            <p className="text-orange-400 font-black uppercase tracking-widest text-[10px]">
-               {workout?.nome_da_planilha || 'Nenhum protocolo ativo'}
-            </p>
-          </div>
           <button 
-            onClick={() => setShowAccountModal(true)}
-            className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-orange-500 hover:border-orange-500 transition-all"
+            onClick={() => {
+              if (isWorkoutStarted && !window.confirm("Abandonar treino em andamento?")) return;
+              setSelectedWorkoutId(null);
+              setIsWorkoutStarted(false);
+            }} 
+            className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1 hover:text-white transition-colors"
           >
-            <Icons.User className="w-6 h-6" />
+            ← Protocolos
           </button>
+          <div className="text-right">
+            <h1 className="text-xl font-black text-white uppercase tracking-tighter italic leading-none">{workout?.nome_da_planilha}</h1>
+            <p className="text-orange-400 font-black uppercase tracking-widest text-[8px] mt-1">Sessão Ativa</p>
+          </div>
         </div>
 
-        {!isWorkoutStarted && workout && (
+        {!isWorkoutStarted && (
            <button 
              onClick={startWorkout}
              className="w-full py-8 bg-orange-500 hover:bg-orange-400 text-slate-950 font-black rounded-[40px] text-2xl uppercase tracking-[0.2em] shadow-2xl shadow-orange-500/20 transition-all flex items-center justify-center gap-4 group"
            >
              <Icons.Play className="w-8 h-8 fill-current group-hover:scale-110 transition-transform" />
-             Iniciar Treino
+             Iniciar Bloco
            </button>
         )}
 
@@ -490,8 +570,8 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
                <Icons.Dumbbell className="w-10 h-10" />
             </div>
             <div className="space-y-2">
-              <p className="text-white font-black uppercase tracking-widest text-sm italic">Protocolo em Preparação</p>
-              <p className="text-slate-500 italic text-xs">O Treinador Prado está ajustando suas divisões de elite.</p>
+              <p className="text-white font-black uppercase tracking-widest text-sm italic">Divisão não selecionada</p>
+              <p className="text-slate-500 italic text-xs">Selecione uma letra do treino para carregar os exercícios de elite.</p>
             </div>
           </div>
         )
