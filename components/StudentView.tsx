@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, PlanilhaTreino, CheckIn, Exercise, LoadEntry, DivisaoTreino, SelecedExercise } from '../types';
 import { Icons } from '../constants';
+import { supabase } from '../supabaseService';
 
 interface StudentViewProps {
   student: User;
@@ -170,21 +171,32 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
     const currentDuration = stopwatchSeconds;
     setFinalDuration(currentDuration);
 
-    await new Promise(resolve => setTimeout(resolve, 800));
+    const cargasParaSalvar: any[] = [];
+    const timestampRegistro = new Date().toISOString();
 
     activeDivisao.exercicios?.forEach((ex, idx) => {
       const exId = ex.id_exercicio;
       const key = `${exId}-${idx}`;
       const loadStr = exerciseLoads[key];
       if (loadStr) {
-        const weight = parseFloat(loadStr);
+        const weight = parseFloat(loadStr.replace(/[^0-9.]/g, ''));
         if (!isNaN(weight)) {
+          // Normalização para CAIXA ALTA
+          const nomeExercicioUpper = ex.nome.toUpperCase().trim();
+          
+          cargasParaSalvar.push({
+            aluno_id: student.id,
+            exercicio: nomeExercicioUpper,
+            carga: weight,
+            data_registro: timestampRegistro
+          });
+
           const previousMax = Math.max(0, ...loadHistory
             .filter(h => h.studentId === student.id && h.exerciseId === exId)
             .map(h => h.weight));
 
           if (weight > previousMax && previousMax > 0) {
-            setPrCelebration({ exercise: ex.nome || 'Exercício', weight });
+            setPrCelebration({ exercise: nomeExercicioUpper, weight });
           }
 
           onRegisterLoad({
@@ -198,6 +210,15 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
       }
     });
 
+    if (cargasParaSalvar.length > 0) {
+      try {
+        const { error } = await supabase.from('historico_cargas').insert(cargasParaSalvar);
+        if (error) console.error("Erro Supabase:", error.message);
+      } catch (err) {
+        console.error("Erro ao sincronizar cargas automáticas:", err);
+      }
+    }
+
     onCheckIn({
       id: Math.random().toString(36).substr(2, 9),
       studentId: student.id,
@@ -207,6 +228,7 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
       durationSeconds: currentDuration
     });
 
+    await new Promise(resolve => setTimeout(resolve, 500));
     setIsWorkoutStarted(false);
     setIsCompleting(false);
     setIsFinished(true);
@@ -384,7 +406,6 @@ const StudentView: React.FC<StudentViewProps> = ({ student, workout, onCheckIn, 
                           {lastLoad && <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 text-[9px] font-black uppercase tracking-tighter">PR: {lastLoad}kg</span>}
                         </div>
                         <h3 className="text-lg font-black text-white uppercase tracking-tight leading-tight">{ex.nome}</h3>
-                        {/* Instruções Técnicas Exibidas Diretamente */}
                         {ex.instrucoes && (
                           <p className="mt-2 text-xs font-medium text-slate-400 italic leading-relaxed">
                             "{ex.instrucoes}"
