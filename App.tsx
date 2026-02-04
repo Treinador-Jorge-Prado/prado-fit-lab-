@@ -10,8 +10,7 @@ import VideoLibrary from './components/VideoLibrary';
 import VideoManager from './components/VideoManager';
 import GerenciadorExercicios from './components/GerenciadorExercicios';
 import { Icons } from './constants';
-import { salvarCarga } from './persistenceService';
-import { getAlunos, saveAluno, getConteudos, saveConteudo, removeConteudo, updateWorkout } from './supabaseService';
+import { getAlunos, saveAluno, getConteudos, saveConteudo, removeConteudo, updateWorkout, uploadShapePhoto, supabase } from './supabaseService';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -26,7 +25,6 @@ const App: React.FC = () => {
   
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [isValidatingToken, setIsValidatingToken] = useState(false);
   
   const [loginRole, setLoginRole] = useState<UserRole | null>(null);
   const [identifier, setIdentifier] = useState('');
@@ -34,9 +32,6 @@ const App: React.FC = () => {
 
   const [currentView, setCurrentView] = useState<'LOGIN' | 'DASHBOARD' | 'STUDENT_VIEW' | 'WORKOUT_EDITOR' | 'PROFILE_VIEW' | 'VIDEO_LIBRARY' | 'VIDEO_MANAGER' | 'EXERCISE_MANAGER'>('LOGIN');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-
-  // LOGO REAL DO PRADO FIT LAB
-  const LOGO_URL = "COLE_SEU_LINK_AQUI";
 
   const loadSupabaseData = useCallback(async () => {
     try {
@@ -79,7 +74,6 @@ const App: React.FC = () => {
         if (storedView) setCurrentView(storedView as any);
         else setCurrentView(refreshedUser.role === UserRole.PERSONAL ? 'DASHBOARD' : 'STUDENT_VIEW');
       }
-
       setIsLoading(false);
     };
     initData();
@@ -98,322 +92,211 @@ const App: React.FC = () => {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
-    
     const data = await loadSupabaseData();
     if (!data) {
-      alert("Erro ao conectar ao Prado Fit Lab. Verifique sua conexão.");
+      alert("Erro de conexão.");
       setIsLoggingIn(false);
       return;
     }
-
     const cleanEmail = identifier.toLowerCase().trim();
-    const cleanPass = password.trim();
-
     if (loginRole === UserRole.PERSONAL) {
-      if (cleanEmail === 'jorge@prado.com' || (cleanEmail === 'admin@teste.com' && cleanPass === '123')) {
+      if (cleanEmail === 'jorge@prado.com' || (cleanEmail === 'admin@teste.com' && password === '123')) {
         setCurrentUser(MOCK_PERSONAL);
         setCurrentView('DASHBOARD');
       } else {
-        alert("Acesso Negado: Credenciais Jorge Prado inválidas.");
+        alert("Acesso Negado.");
       }
     } else {
       const student = data.students.find(s => s.email.toLowerCase().trim() === cleanEmail);
-      if (student) {
-        if (student.password === cleanPass) {
-          setCurrentUser(student);
-          setCurrentView('STUDENT_VIEW');
-        } else {
-          alert("Senha incorreta. Tente novamente ou peça suporte ao Jorge.");
-        }
+      if (student && student.password === password) {
+        setCurrentUser(student);
+        setCurrentView('STUDENT_VIEW');
       } else {
-        alert("Membro não encontrado no banco de dados Prado Fit Lab.");
+        alert("Credenciais inválidas.");
       }
     }
     setIsLoggingIn(false);
+  };
+
+  const handleUploadShape = async (file: File) => {
+    if (!currentUser) return;
+    try {
+      const publicUrl = await uploadShapePhoto(currentUser.id, file);
+      
+      // REGISTRO NO MURAL (O que estava faltando)
+      await supabase.from('evolucao_fotos').insert([
+        { aluno_id: currentUser.id, url_foto: publicUrl }
+      ]);
+
+      // ATUALIZAÇÃO DO PERFIL
+      await supabase.from('alunos').update({ url_shape_atual: publicUrl }).eq('id', currentUser.id);
+
+      await loadSupabaseData();
+      setCurrentUser(prev => prev ? { ...prev, url_shape_atual: publicUrl } : null);
+      alert("Foto registrada no Mural!");
+    } catch (e) {
+      alert("Erro ao salvar no Mural.");
+    }
   };
 
   const logout = () => {
     setCurrentUser(null);
     setCurrentView('LOGIN');
     setLoginRole(null);
-    setIdentifier('');
-    setPassword('');
+    setSelectedStudentId(null);
   };
 
-  const handleAddMember = async (newMember: User) => {
-    try {
-      await saveAluno(newMember);
-      await loadSupabaseData();
-      // O formulário no AdicionarMembro.tsx já lida com o estado de sucesso
-    } catch (e) {
-      console.error("FALHA AO SALVAR ALUNO:", e);
-      alert("Erro ao salvar no banco. Verifique o console para diagnóstico.");
-    }
+  const handleOpenStudentProfile = (studentId: string) => {
+    setSelectedStudentId(studentId);
+    setCurrentView('PROFILE_VIEW');
   };
 
-  const handleUpdateMember = async (updatedMember: User) => {
-    try {
-      await saveAluno(updatedMember);
-      await loadSupabaseData();
-      if (currentUser?.id === updatedMember.id) setCurrentUser(updatedMember);
-    } catch (e) {
-      console.error("FALHA AO ATUALIZAR ALUNO:", e);
-    }
-  };
+  const studentBeingViewed = currentUser?.role === UserRole.PERSONAL 
+    ? students.find(s => s.id === selectedStudentId) 
+    : currentUser;
 
-  const handleAddVideo = async (newVideo: VideoContent) => {
-    try {
-      await saveConteudo(newVideo);
-      await loadSupabaseData();
-    } catch (e) {
-      console.error("FALHA AO ADICIONAR CONTEÚDO:", e);
-    }
-  };
+  const currentWorkout = workouts.find(w => w.id_aluno === studentBeingViewed?.id);
 
-  const handleUpdateVideo = async (updatedVideo: VideoContent) => {
-    try {
-      await saveConteudo(updatedVideo);
-      await loadSupabaseData();
-    } catch (e) {
-      console.error("FALHA AO ATUALIZAR CONTEÚDO:", e);
-    }
-  };
-
-  const handleRemoveVideo = async (id: string) => {
-    try {
-      await removeConteudo(id);
-      await loadSupabaseData();
-    } catch (e) {
-      console.error("FALHA AO REMOVER CONTEÚDO:", e);
-    }
-  };
-
-  const handleSaveWorkout = async (workout: PlanilhaTreino) => {
-    try {
-      await updateWorkout(workout.id_aluno, workout);
-      await loadSupabaseData();
-      setCurrentView('DASHBOARD');
-    } catch (e) {
-      console.error("FALHA AO SALVAR WORKOUT:", e);
-    }
-  };
-
-  const addCheckIn = (checkin: CheckIn) => {
-    const updated = [...checkins, checkin];
-    setCheckins(updated);
-    localStorage.setItem('checkins', JSON.stringify(updated));
-  };
-
-  const handleRegisterLoad = async (entry: LoadEntry) => {
-    await salvarCarga(entry);
-    setLoadHistory(prev => [...prev, entry]);
-  };
-
-  const handleUpdateBiometrics = (metrics: Biometrics) => {
-    const newEntry: EvolutionEntry = {
-      id: Math.random().toString(36).substr(2, 9),
-      date: Date.now(),
-      biometrics: metrics,
-      photos: {}
-    };
-    setEvolution(prev => [newEntry, ...prev]);
-  };
-
-  if (isLoading || isValidatingToken) {
+  if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 gap-6">
-        <div className="relative">
-          <div className="w-20 h-20 border-4 border-orange-500/10 border-t-orange-500 rounded-full animate-spin"></div>
-          <div className="absolute inset-0 flex items-center justify-center text-orange-500">
-            <Icons.Activity className="w-8 h-8 animate-pulse" />
-          </div>
-        </div>
-        <p className="text-orange-400 font-black uppercase tracking-[0.3em] text-sm animate-pulse">PRADO FIT LAB</p>
-      </div>
-    );
-  }
-
-  if (currentView === 'LOGIN') {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-950 relative overflow-hidden">
-        <div className="w-full max-sm:px-4 max-w-sm space-y-12 text-center relative z-10">
-          
-          {/* CABEÇALHO DESIGN DE ELITE CORRIGIDO */}
-          <div className="flex flex-col items-center space-y-6">
-            <div className="relative">
-              <img 
-                src={LOGO_URL} 
-                alt="Logo Prado Fit Lab" 
-                className="h-[120px] w-auto object-contain drop-shadow-[0_0_15px_rgba(249,115,22,0.6)]"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            </div>
-            
-            <div className="space-y-1">
-              <h1 className="text-4xl font-black italic tracking-tighter text-white uppercase leading-none">
-                PRADO FIT LAB
-              </h1>
-              <p className="text-xs font-bold text-orange-500 uppercase tracking-[0.3em]">
-                TEAM JORGE PRADO
-              </p>
-            </div>
-          </div>
-          
-          {!loginRole ? (
-            <div className="space-y-4 pt-4">
-              <button 
-                onClick={() => setLoginRole(UserRole.PERSONAL)} 
-                className="w-full flex items-center justify-between p-6 rounded-[32px] bg-slate-900 border border-slate-800 hover:border-orange-500/50 transition-all group shadow-xl text-left"
-              >
-                <div>
-                  <p className="font-black text-white text-lg uppercase tracking-tight">Gestão Jorge</p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Treinador Admin</p>
-                </div>
-                <div className="p-3 rounded-2xl bg-orange-500/10 text-orange-400"><Icons.User /></div>
-              </button>
-              <button 
-                onClick={() => setLoginRole(UserRole.STUDENT)} 
-                className="w-full flex items-center justify-between p-6 rounded-[32px] bg-slate-900 border border-slate-800 hover:border-orange-500/50 transition-all group shadow-xl text-left"
-              >
-                <div>
-                  <p className="font-black text-white text-lg uppercase tracking-tight">Membro Team Prado</p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Acessar Treino</p>
-                </div>
-                <div className="p-3 rounded-2xl bg-orange-500/10 text-orange-400"><Icons.Dumbbell /></div>
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleLoginSubmit} className="space-y-6 text-left animate-in slide-in-from-bottom-4 duration-500">
-              <button type="button" onClick={() => setLoginRole(null)} className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1 hover:text-white mb-4 transition-colors">← Voltar</button>
-              <div className="space-y-4">
-                <input 
-                  type="text" required 
-                  value={identifier} 
-                  onChange={(e) => setIdentifier(e.target.value)} 
-                  placeholder="Seu E-mail" 
-                  className="w-full bg-slate-950 border-2 border-slate-800 rounded-2xl px-6 py-4 text-white font-bold placeholder:text-slate-600 focus:outline-none focus:border-orange-500 transition-all" 
-                />
-                <input 
-                  type="password" required
-                  placeholder="Senha" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  className="w-full bg-slate-900 border-2 border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:outline-none focus:border-orange-500 transition-all" 
-                />
-              </div>
-              <button 
-                type="submit" 
-                disabled={isLoggingIn} 
-                className="w-full py-5 bg-orange-500 text-slate-950 font-black rounded-2xl shadow-2xl uppercase tracking-widest text-sm active:scale-95 transition-all"
-              >
-                {isLoggingIn ? 'Sincronizando...' : 'Entrar no Lab'}
-              </button>
-            </form>
-          )}
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="w-10 h-10 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-20 md:pb-0 bg-slate-950">
-      <header className="sticky top-0 z-[60] flex items-center justify-between px-8 py-5 bg-slate-950/90 backdrop-blur-xl border-b border-slate-900">
-        <div className="flex items-center gap-4">
-          <img 
-            src={LOGO_URL} 
-            className="h-8 w-auto object-contain drop-shadow-[0_0_8px_rgba(249,115,22,0.3)]" 
-            alt="Logo" 
-            onError={(e) => e.currentTarget.style.display = 'none'}
-          />
-          <div className="flex flex-col">
-            <span className="font-black text-lg tracking-tighter text-white uppercase italic leading-none">PRADO FIT LAB</span>
-            <span className="text-[8px] font-bold text-orange-500 uppercase tracking-[0.2em] leading-none mt-0.5">TEAM JORGE PRADO</span>
+    <div className="min-h-screen pb-20 md:pb-0 bg-slate-950 text-slate-50">
+      {currentView === 'LOGIN' ? (
+        <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950">
+          <div className="w-full max-sm:px-4 max-w-sm space-y-12 text-center">
+            <div className="flex flex-col items-center space-y-6">
+              <div className="w-20 h-20 bg-orange-500/10 rounded-full border border-orange-500/20 flex items-center justify-center">
+                <Icons.Activity className="w-10 h-10 text-orange-500" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-black italic uppercase leading-none">PRADO FIT LAB</h1>
+                <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest mt-1">Team Jorge Prado</p>
+              </div>
+            </div>
+            {!loginRole ? (
+              <div className="space-y-4">
+                <button onClick={() => setLoginRole(UserRole.PERSONAL)} className="w-full p-6 bg-slate-900 border border-slate-800 rounded-3xl flex items-center justify-between hover:border-orange-500/50 transition-all">
+                  <span className="font-black uppercase">Painel Jorge</span>
+                  <Icons.User className="text-orange-500" />
+                </button>
+                <button onClick={() => setLoginRole(UserRole.STUDENT)} className="w-full p-6 bg-slate-900 border border-slate-800 rounded-3xl flex items-center justify-between hover:border-orange-500/50 transition-all">
+                  <span className="font-black uppercase">Membro Team Prado</span>
+                  <Icons.Dumbbell className="text-orange-500" />
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleLoginSubmit} className="space-y-4 text-left animate-in slide-in-from-bottom-4">
+                <button type="button" onClick={() => setLoginRole(null)} className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">← Voltar</button>
+                <input type="text" required value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="E-mail" className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:border-orange-500" />
+                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha" className="w-full bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:border-orange-500" />
+                <button type="submit" className="w-full py-5 bg-orange-500 text-slate-950 font-black rounded-2xl uppercase tracking-widest active:scale-95 transition-all">Acessar Lab</button>
+              </form>
+            )}
           </div>
         </div>
-        <button onClick={logout} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-all">Sair</button>
-      </header>
+      ) : (
+        <>
+          <header className="sticky top-0 z-[60] flex items-center justify-between px-8 py-5 bg-slate-950/80 backdrop-blur-md border-b border-slate-900">
+            <div className="flex items-center gap-3">
+              <Icons.Activity className="text-orange-500 w-6 h-6" />
+              <span className="font-black text-lg uppercase italic leading-none">PRADO FIT LAB</span>
+            </div>
+            <button onClick={logout} className="text-[10px] font-black uppercase text-slate-500">Sair</button>
+          </header>
 
-      <main>
-        {currentView === 'DASHBOARD' && (
-          <PersonalDashboard 
-            students={students} 
-            workouts={workouts} 
-            onOpenWorkoutEditor={(sid) => { setSelectedStudentId(sid); setCurrentView('WORKOUT_EDITOR'); }} 
-            onAddMember={handleAddMember}
-            onUpdateMember={handleUpdateMember}
-            checkins={checkins}
-          />
-        )}
-        {currentView === 'VIDEO_MANAGER' && (
-          <VideoManager 
-            videos={videos} 
-            onAddVideo={handleAddVideo} 
-            onUpdateVideo={handleUpdateVideo}
-            onRemoveVideo={handleRemoveVideo} 
-          />
-        )}
-        {currentView === 'STUDENT_VIEW' && (
-          <StudentView 
-            student={currentUser!} 
-            workout={workouts.find(w => w.id_aluno === currentUser?.id)} 
-            onCheckIn={addCheckIn}
-            onRegisterLoad={handleRegisterLoad}
-            loadHistory={loadHistory}
-            onUpdateProfile={handleUpdateMember}
-          />
-        )}
-        {currentView === 'VIDEO_LIBRARY' && <VideoLibrary videos={videos} />}
-        {currentView === 'PROFILE_VIEW' && <ProfileView student={currentUser!} evolutionHistory={evolution} onUpdateBiometrics={handleUpdateBiometrics} checkins={checkins} />}
-        {currentView === 'WORKOUT_EDITOR' && selectedStudentId && (
-          <WorkoutEditor 
-            student={students.find(s => s.id === selectedStudentId)!}
-            existingWorkout={workouts.find(w => w.id_aluno === selectedStudentId)}
-            exercisesLibrary={exercises}
-            onSave={handleSaveWorkout}
-            onCancel={() => setCurrentView('DASHBOARD')}
-            loadHistory={loadHistory}
-          />
-        )}
-        {currentView === 'EXERCISE_MANAGER' && (
-          <GerenciadorExercicios 
-            exercises={exercises}
-            categories={categories}
-            onAddExercise={(ex) => { setExercises(prev => [...prev, ex]); localStorage.setItem('lab_exercises', JSON.stringify([...exercises, ex])); }}
-            onRemoveExercise={(id) => { const filtered = exercises.filter(ex => ex.id !== id); setExercises(filtered); localStorage.setItem('lab_exercises', JSON.stringify(filtered)); }}
-            onAddCategory={(cat) => { const updated = [...categories, cat]; setCategories(updated); localStorage.setItem('lab_categories', JSON.stringify(updated)); }}
-          />
-        )}
-      </main>
+          <main className="max-w-5xl mx-auto">
+            {currentView === 'DASHBOARD' && (
+              <PersonalDashboard 
+                students={students} workouts={workouts} checkins={checkins}
+                onOpenWorkoutEditor={(sid) => { setSelectedStudentId(sid); setCurrentView('WORKOUT_EDITOR'); }} 
+                onAddMember={async (m) => { await saveAluno(m); await loadSupabaseData(); }}
+                onUpdateMember={async (m) => { await saveAluno(m); await loadSupabaseData(); }}
+                onViewProfile={handleOpenStudentProfile}
+              />
+            )}
+            {currentView === 'STUDENT_VIEW' && (
+              <StudentView 
+                student={currentUser!} workout={currentWorkout} 
+                onCheckIn={(c) => setCheckins([...checkins, c])}
+                onRegisterLoad={(l) => setLoadHistory([...loadHistory, l])}
+                loadHistory={loadHistory}
+              />
+            )}
+            {currentView === 'PROFILE_VIEW' && studentBeingViewed && (
+              <ProfileView 
+                student={studentBeingViewed} 
+                evolutionHistory={evolution} checkins={checkins} 
+                onUpdateBiometrics={(m) => console.log(m)}
+                onUploadShape={handleUploadShape}
+                isTrainerMode={currentUser?.role === UserRole.PERSONAL}
+                onBack={currentUser?.role === UserRole.PERSONAL ? () => setCurrentView('DASHBOARD') : undefined}
+                workout={currentWorkout}
+              />
+            )}
+            {currentView === 'WORKOUT_EDITOR' && selectedStudentId && (
+              <WorkoutEditor 
+                student={students.find(s => s.id === selectedStudentId)!}
+                existingWorkout={workouts.find(w => w.id_aluno === selectedStudentId)}
+                exercisesLibrary={exercises}
+                onSave={async (w) => { await updateWorkout(w.id_aluno, w); await loadSupabaseData(); setCurrentView('DASHBOARD'); }}
+                onCancel={() => setCurrentView('DASHBOARD')}
+                loadHistory={loadHistory}
+              />
+            )}
+            {currentView === 'VIDEO_LIBRARY' && <VideoLibrary videos={videos} />}
+            {currentView === 'VIDEO_MANAGER' && (
+              <VideoManager 
+                videos={videos} 
+                onAddVideo={async (v) => { await saveConteudo(v); await loadSupabaseData(); }} 
+                onUpdateVideo={async (v) => { await saveConteudo(v); await loadSupabaseData(); }}
+                onRemoveVideo={async (id) => { await removeConteudo(id); await loadSupabaseData(); }} 
+              />
+            )}
+            {currentView === 'EXERCISE_MANAGER' && (
+              <GerenciadorExercicios 
+                exercises={exercises} categories={categories}
+                onAddExercise={(e) => { setExercises([...exercises, e]); localStorage.setItem('lab_exercises', JSON.stringify([...exercises, e])); }}
+                onRemoveExercise={(id) => { const f = exercises.filter(ex => ex.id !== id); setExercises(f); localStorage.setItem('lab_exercises', JSON.stringify(f)); }}
+                onAddCategory={(c) => setCategories([...categories, c])}
+              />
+            )}
+          </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex items-center justify-around z-50">
-        {currentUser?.role === UserRole.PERSONAL ? (
-          <>
-            <button onClick={() => setCurrentView('DASHBOARD')} className={`flex flex-col items-center gap-1 transition-all ${currentView === 'DASHBOARD' ? 'text-orange-500' : 'text-slate-500'}`}>
-              <Icons.User className="w-6 h-6" /><span className="text-[8px] uppercase font-black tracking-widest">Membros</span>
-            </button>
-            <button onClick={() => setCurrentView('EXERCISE_MANAGER')} className={`flex flex-col items-center gap-1 transition-all ${currentView === 'EXERCISE_MANAGER' ? 'text-orange-500' : 'text-slate-500'}`}>
-              <Icons.Dumbbell className="w-6 h-6" /><span className="text-[8px] uppercase font-black tracking-widest">Exercícios</span>
-            </button>
-            <button onClick={() => setCurrentView('VIDEO_MANAGER')} className={`flex flex-col items-center gap-1 transition-all ${currentView === 'VIDEO_MANAGER' ? 'text-orange-500' : 'text-slate-500'}`}>
-              <Icons.Play className="w-6 h-6" /><span className="text-[8px] uppercase font-black tracking-widest">Conteúdo</span>
-            </button>
-          </>
-        ) : (
-          <>
-            <button onClick={() => setCurrentView('STUDENT_VIEW')} className={`flex flex-col items-center gap-1 transition-all ${currentView === 'STUDENT_VIEW' ? 'text-orange-500' : 'text-slate-500'}`}>
-              <Icons.Dumbbell className="w-6 h-6" /><span className="text-[8px] uppercase font-black tracking-widest">Treino</span>
-            </button>
-            <button onClick={() => setCurrentView('VIDEO_LIBRARY')} className={`flex flex-col items-center gap-1 transition-all ${currentView === 'VIDEO_LIBRARY' ? 'text-orange-500' : 'text-slate-500'}`}>
-              <Icons.Play className="w-6 h-6" /><span className="text-[8px] uppercase font-black tracking-widest">Conteúdo</span>
-            </button>
-            <button onClick={() => setCurrentView('PROFILE_VIEW')} className={`flex flex-col items-center gap-1 transition-all ${currentView === 'PROFILE_VIEW' ? 'text-orange-500' : 'text-slate-500'}`}>
-              <Icons.User className="w-6 h-6" /><span className="text-[8px] uppercase font-black tracking-widest">Perfil</span>
-            </button>
-          </>
-        )}
-      </nav>
+          <nav className="fixed bottom-0 left-0 right-0 h-20 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 flex items-center justify-around z-50">
+            {currentUser?.role === UserRole.PERSONAL ? (
+              <>
+                <button onClick={() => setCurrentView('DASHBOARD')} className={`flex flex-col items-center gap-1 ${currentView === 'DASHBOARD' ? 'text-orange-500' : 'text-slate-500'}`}>
+                  <Icons.User className="w-6 h-6" /><span className="text-[8px] uppercase font-black">Membros</span>
+                </button>
+                <button onClick={() => setCurrentView('EXERCISE_MANAGER')} className={`flex flex-col items-center gap-1 ${currentView === 'EXERCISE_MANAGER' ? 'text-orange-500' : 'text-slate-500'}`}>
+                  <Icons.Dumbbell className="w-6 h-6" /><span className="text-[8px] uppercase font-black">Lab</span>
+                </button>
+                <button onClick={() => setCurrentView('VIDEO_MANAGER')} className={`flex flex-col items-center gap-1 ${currentView === 'VIDEO_MANAGER' ? 'text-orange-500' : 'text-slate-500'}`}>
+                  <Icons.Play className="w-6 h-6" /><span className="text-[8px] uppercase font-black">Aulas</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setCurrentView('STUDENT_VIEW')} className={`flex flex-col items-center gap-1 ${currentView === 'STUDENT_VIEW' ? 'text-orange-500' : 'text-slate-500'}`}>
+                  <Icons.Dumbbell className="w-6 h-6" /><span className="text-[8px] uppercase font-black">Treino</span>
+                </button>
+                <button onClick={() => setCurrentView('PROFILE_VIEW')} className={`flex flex-col items-center gap-1 ${currentView === 'PROFILE_VIEW' ? 'text-orange-500' : 'text-slate-500'}`}>
+                  <Icons.User className="w-6 h-6" /><span className="text-[8px] uppercase font-black">Evolução</span>
+                </button>
+                <button onClick={() => setCurrentView('VIDEO_LIBRARY')} className={`flex flex-col items-center gap-1 ${currentView === 'VIDEO_LIBRARY' ? 'text-orange-500' : 'text-slate-500'}`}>
+                  <Icons.Play className="w-6 h-6" /><span className="text-[8px] uppercase font-black tracking-widest">Aulas</span>
+                </button>
+              </>
+            )}
+          </nav>
+        </>
+      )}
     </div>
   );
 };

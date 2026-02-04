@@ -7,53 +7,62 @@ const SUPABASE_KEY = "sb_publishable_1uk-KkeSPbLBn_jJv1BgXQ_QlhM3_eC";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Gerenciamento de Alunos
+export interface EvolucaoFoto {
+  id: string;
+  aluno_id: string;
+  url_foto: string;
+  data_criacao: string;
+}
+
 export const getAlunos = async (): Promise<User[]> => {
-  // Selecionando exatamente as colunas do banco
   const { data, error } = await supabase
     .from('alunos')
-    .select('id, nome, email, senha, treinos');
+    .select('id, nome, email, senha, treinos, url_shape_atual');
   
-  if (error) {
-    console.error("ERRO SUPABASE (SELECT ALUNOS):", error.message, error.details);
-    throw error;
-  }
+  if (error) throw error;
 
-  // Mapeia o retorno do banco (colunas PT) para a interface da aplicação
   return (data || []).map(row => ({
     id: row.id,
     name: row.nome,
     email: row.email,
     password: row.senha,
     role: UserRole.STUDENT,
-    workout_data: row.treinos // Campo JSON com a planilha de treinos
+    workout_data: row.treinos,
+    url_shape_atual: row.url_shape_atual
   } as any));
 };
 
-// Gerenciamento de Alunos - CORRIGIDO
-export const saveAluno = async (aluno: any) => {
-  const payload: any = {
-    nome: aluno.name || aluno.nome,
-    email: aluno.email,
-    senha: aluno.password || aluno.senha,
-    treinos: aluno.workout_data || aluno.treinos || { A: [], B: [], C: [] }
-  };
+export const getGaleriaFotos = async (alunoId: string): Promise<EvolucaoFoto[]> => {
+  const { data, error } = await supabase
+    .from('evolucao_fotos')
+    .select('*')
+    .eq('aluno_id', alunoId);
 
-  // Importante: Só enviamos o ID se ele for um UUID válido (gerado pelo Supabase)
-  // Isso evita o erro de "invalid input syntax for type uuid"
-  if (aluno.id && typeof aluno.id === 'string' && aluno.id.length > 20) {
-    payload.id = aluno.id;
-  }
-
-  const { error } = await supabase
-    .from('alunos')
-    .upsert(payload);
-  
   if (error) {
-    console.error("ERRO SUPABASE (SAVE ALUNO):", error.message);
-    alert("Erro ao salvar no banco: " + error.message);
-    throw error;
+    console.error("ERRO AO CARREGAR MURAL:", error.message);
+    return [];
   }
+  return data || [];
+};
+
+export const uploadShapePhoto = async (studentId: string, file: File): Promise<string> => {
+  const timestamp = Date.now();
+  const fileExt = file.name.split('.').pop() || 'jpg';
+  const filePath = `${studentId}/${timestamp}.${fileExt}`;
+
+  // 1. Upload para o bucket 'shapes'
+  const { error: uploadError } = await supabase.storage
+    .from('shapes')
+    .upload(filePath, file);
+
+  if (uploadError) throw uploadError;
+
+  // 2. URL Pública
+  const { data } = supabase.storage
+    .from('shapes')
+    .getPublicUrl(filePath);
+  
+  return data.publicUrl;
 };
 
 export const updateWorkout = async (studentId: string, workout: PlanilhaTreino) => {
@@ -61,25 +70,29 @@ export const updateWorkout = async (studentId: string, workout: PlanilhaTreino) 
     .from('alunos')
     .update({ treinos: workout })
     .eq('id', studentId);
-  
-  if (error) {
-    console.error("ERRO SUPABASE (UPDATE TREINOS):", error.message, error.details);
-    throw error;
-  }
+  if (error) throw error;
 };
 
-// Gerenciamento de Conteúdos
+export const saveAluno = async (aluno: any) => {
+  const payload: any = {
+    nome: aluno.name || aluno.nome,
+    email: aluno.email,
+    senha: aluno.password || aluno.senha,
+    treinos: aluno.workout_data || aluno.treinos || { A: [], B: [], C: [] },
+    url_shape_atual: aluno.url_shape_atual || null
+  };
+  if (aluno.id && typeof aluno.id === 'string' && aluno.id.length > 20) {
+    payload.id = aluno.id;
+  }
+  const { error } = await supabase.from('alunos').upsert(payload);
+  if (error) throw error;
+};
+
 export const getConteudos = async (): Promise<VideoContent[]> => {
-  // Selecionando conforme schema solicitado
   const { data, error } = await supabase
     .from('conteudos')
     .select('id, titulo, thumbnail, video_url, descricao');
-  
-  if (error) {
-    console.error("ERRO SUPABASE (SELECT CONTEUDOS):", error.message, error.details);
-    throw error;
-  }
-
+  if (error) throw error;
   return (data || []).map(row => ({
     id: row.id,
     titulo: row.titulo,
@@ -92,7 +105,6 @@ export const getConteudos = async (): Promise<VideoContent[]> => {
   }));
 };
 
-// Gerenciamento de Conteúdos - CORRIGIDO
 export const saveConteudo = async (video: any) => {
   const payload: any = {
     titulo: video.titulo,
@@ -100,29 +112,14 @@ export const saveConteudo = async (video: any) => {
     video_url: video.url || video.video_url,
     descricao: video.descricao
   };
-
   if (video.id && typeof video.id === 'string' && video.id.length > 20) {
     payload.id = video.id;
   }
-
-  const { error } = await supabase
-    .from('conteudos')
-    .upsert(payload);
-  
-  if (error) {
-    console.error("ERRO SUPABASE (SAVE CONTEUDO):", error.message);
-    throw error;
-  }
+  const { error } = await supabase.from('conteudos').upsert(payload);
+  if (error) throw error;
 };
 
 export const removeConteudo = async (id: string) => {
-  const { error } = await supabase
-    .from('conteudos')
-    .delete()
-    .eq('id', id);
-  
-  if (error) {
-    console.error("ERRO SUPABASE (DELETE CONTEUDO):", error.message, error.details);
-    throw error;
-  }
+  const { error } = await supabase.from('conteudos').delete().eq('id', id);
+  if (error) throw error;
 };

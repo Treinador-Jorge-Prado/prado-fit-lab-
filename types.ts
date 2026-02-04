@@ -16,6 +16,8 @@ export interface User {
   profileImage?: string;
   badges?: Badge[];
   objective?: string;
+  // URL da foto mais recente do shape do aluno
+  url_shape_atual?: string;
 }
 
 export interface VideoContent {
